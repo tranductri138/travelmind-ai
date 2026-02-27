@@ -1,0 +1,46 @@
+[project]
+name = "travelmind-ai"
+version = "0.1.0"
+description = "TravelMind AI Service — LLM, Embeddings, RAG & Web Scraping"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "qdrant-client>=1.12",
+    "openai>=1.60",
+    "aio-pika>=9.5",
+    "playwright>=1.49",
+    "beautifulsoup4>=4.12",
+    "pydantic-settings>=2.7",
+    "httpx>=0.28",
+    "tiktoken>=0.8",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
+    "aiosqlite>=0.20",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+ignore = ["B008"]  # B008: Depends() in defaults is standard FastAPI
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
