@@ -10,7 +10,8 @@
 | POST | `/ai/search` | ai/router.py | Semantic search hotels |
 | POST | `/ai/similar/{hotel_id}` | ai/router.py | Tìm hotels tương tự |
 | POST | `/ai/rag/itinerary` | ai/router.py | RAG tạo lịch trình |
-| POST | `/ai/chat` | chat/router.py | LangGraph agent chat |
+| POST | `/ai/sync` | ai/router.py | Force sync PostgreSQL → Qdrant (re-embed tất cả) |
+| POST | `/ai/chat` | chat/router.py | LangGraph agent chat (SSE streaming) |
 | POST | `/scraping/extract` | scraping/router.py | Web scraping + LLM extract |
 
 ## Dependency Injection (`dependencies.py`)
@@ -101,3 +102,20 @@ app.include_router(chat_router, prefix="/ai")
 app.include_router(scraping_router, prefix="/scraping")
 app.add_middleware(CorrelationIDMiddleware)
 ```
+
+## Tích Hợp Với NestJS Backend
+
+NestJS backend (port 3000) gọi AI service trong 3 trường hợp:
+
+| NestJS endpoint | Gọi AI endpoint | Mô tả |
+|----------------|-----------------|-------|
+| `POST /api/search/semantic` | `POST /ai/search` | Proxy semantic search |
+| Chat Gateway (WebSocket `/chat`) | `POST /ai/chat` (SSE) | Stream chat response |
+| `POST /api/crawler/trigger` | `POST /scraping/extract` | HTTP direct call để scrape URL |
+| Backend script `prisma/sync-ai.ts` | `POST /ai/sync` | Sync PostgreSQL → Qdrant sau khi seed |
+
+**Search proxy**: NestJS `SearchService` forward request nguyên vẹn, không xử lý gì thêm.
+
+**Chat SSE**: NestJS parse SSE stream, mỗi chunk emit qua WebSocket về browser. Chỉ gửi message mới nhất — AI tự nhớ history qua LangGraph checkpoint.
+
+**Scraping HTTP**: NestJS `CrawlerService` gọi trực tiếp (không qua RabbitMQ), chờ ~10-30s, tạo Hotel từ kết quả.

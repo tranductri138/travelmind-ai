@@ -46,5 +46,9 @@ class Settings(BaseSettings):
     cag_semantic_threshold: float = 0.95
     cag_semantic_ttl: int = 3600  # 1 hour
 
+    # Scraping limits (demo mode)
+    scraping_max_requests_per_day: int = 2  # Limit to 2 scrapes per day for demo
+    scraping_enabled: bool = True  # Toggle scraping on/off
+
 
 settings = Settings()

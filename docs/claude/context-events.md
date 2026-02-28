@@ -20,7 +20,7 @@
 | `booking.created` | ai.booking.created | booking/consumer.py | embed → `bookings` + analytics |
 | `booking.confirmed` | ai.booking.confirmed | booking/consumer.py | re-embed + analytics |
 | `booking.cancelled` | ai.booking.cancelled | booking/consumer.py | delete + analytics |
-| `crawler.job` | ai.crawler.job | scraping/consumer.py | scrape URL → publish result |
+| `crawler.job` | ai.crawler.job | scraping/consumer.py | scrape URL → publish result (ít dùng — NestJS chủ yếu gọi HTTP trực tiếp POST /scraping/extract) |
 
 ## Published Events (bởi AI service)
 
@@ -85,12 +85,23 @@ booking.cancelled → delete_booking_embedding(data.id)
                  → _publish_analytics(action="cancelled")
 ```
 
-## Scraping Consumer Flow
+## Scraping — 2 Cách Gọi
 
+**1. HTTP Direct Call (chính — từ NestJS `CrawlerService`):**
+```
+NestJS POST /api/crawler/trigger { url }
+  → CrawlerService tạo CrawlJob(PENDING)
+  → Background: POST http://ai:8000/scraping/extract { url, extract_reviews }
+  → AI scrape (~10-30s) → trả kết quả trực tiếp
+  → NestJS tạo Hotel → link hotelId → CrawlJob COMPLETED
+  → emit hotel.created → EventBridge → RabbitMQ → AI embed vào Qdrant
+```
+
+**2. RabbitMQ Consumer (vẫn hoạt động):**
 ```
 crawler.job → {url, options}
   → Playwright.render(url)           # full JS render
   → BeautifulSoup.clean(html)        # strip scripts/nav
-  → LLM.extract(clean_html)          # → {hotels, reviews}
+  → LLM.extract(clean_html)          # → {hotel, reviews}
   → publish crawler.completed
 ```

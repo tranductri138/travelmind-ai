@@ -32,16 +32,16 @@ async def semantic_search(
 
     query_filter = Filter(must=conditions) if conditions else None
 
-    hits = await qdrant_client.search(
+    results_response = await qdrant_client.query_points(
         collection_name=settings.qdrant_collection_hotels,
-        query_vector=query_vector,
+        query=query_vector,
         query_filter=query_filter,
         limit=request.limit * 2,  # fetch extra to deduplicate chunks
     )
 
     # Deduplicate by hotel_id, keeping best score
     seen: dict[str, float] = {}
-    for hit in hits:
+    for hit in results_response.points:
         hotel_id = hit.payload["hotel_id"]  # type: ignore[index]
         if hotel_id not in seen or hit.score > seen[hotel_id]:
             seen[hotel_id] = hit.score

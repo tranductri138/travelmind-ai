@@ -111,19 +111,19 @@ class SemanticCache:
         """Look up a semantically similar cached response."""
         try:
             vectors = await self._embedding.embed([query])
-            hits = await self._qdrant.search(
+            results_response = await self._qdrant.query_points(
                 collection_name=CACHE_COLLECTION,
-                query_vector=vectors[0],
+                query=vectors[0],
                 limit=1,
             )
         except Exception:
             logger.debug("Semantic cache lookup failed", exc_info=True)
             return None
 
-        if not hits:
+        if not results_response.points:
             return None
 
-        best = hits[0]
+        best = results_response.points[0]
         if best.score < self._threshold:
             return None
 

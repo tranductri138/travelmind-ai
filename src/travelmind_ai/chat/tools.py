@@ -97,16 +97,16 @@ async def search_hotels(
         conditions.append(FieldCondition(key="stars", range=Range(gte=min_stars)))
     query_filter = Filter(must=conditions) if conditions else None
 
-    hits = await qdrant_client.search(
+    results_response = await qdrant_client.query_points(
         collection_name=settings.qdrant_collection_hotels,
-        query_vector=vectors[0],
+        query=vectors[0],
         query_filter=query_filter,
         limit=20,
     )
 
     # Deduplicate by hotel_id, keep best score
     seen: dict[str, tuple[float, str]] = {}
-    for hit in hits:
+    for hit in results_response.points:
         if hit.score < 0.25:
             continue
         hotel_id = hit.payload["hotel_id"]  # type: ignore[index]

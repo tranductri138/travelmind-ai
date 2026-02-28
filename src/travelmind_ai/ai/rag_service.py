@@ -26,15 +26,15 @@ async def generate_itinerary(
         search_text += f" for {', '.join(request.interests)}"
 
     vectors = await embedding_client.embed([search_text])
-    hits = await qdrant_client.search(
+    results_response = await qdrant_client.query_points(
         collection_name=settings.qdrant_collection_hotels,
-        query_vector=vectors[0],
+        query=vectors[0],
         limit=10,
     )
 
     # Deduplicate and build context
     seen: dict[str, tuple[float, str]] = {}
-    for hit in hits:
+    for hit in results_response.points:
         hid = hit.payload["hotel_id"]  # type: ignore[index]
         text = hit.payload["text"]  # type: ignore[index]
         if hid not in seen or hit.score > seen[hid][0]:

@@ -88,6 +88,7 @@ FastAPI Depends, quản lý singleton toàn cục:
 | POST | `/ai/search` | Semantic search hotels |
 | POST | `/ai/similar/{hotel_id}` | Tìm hotels tương tự |
 | POST | `/ai/rag/itinerary` | Tạo lịch trình du lịch bằng RAG |
+| POST | `/ai/sync` | Force sync PostgreSQL → Qdrant (re-embed tất cả hotels + reviews) |
 
 ### Luồng Semantic Search
 
@@ -110,6 +111,35 @@ Request (destination, days, preferences)
   → LLM(prompt + context) → day-by-day itinerary text
   → Response: RAGItineraryResponse
 ```
+
+### Luồng Sync (`POST /ai/sync`)
+
+```
+POST /ai/sync
+  → Query tất cả active hotels từ PostgreSQL
+  → Với mỗi hotel: embed_hotel() → chunk text → embed → upsert Qdrant "hotels"
+  → Query tất cả reviews từ PostgreSQL
+  → Với mỗi review: embed_review() → embed → upsert Qdrant "reviews"
+  → Response: { synced_hotels, total_hotels, synced_reviews, total_reviews }
+```
+
+**Khi nào dùng:**
+- Sau khi migrate + seed database lần đầu (`npx tsx prisma/sync-ai.ts`)
+- Rebuild Qdrant từ scratch
+- Recovery sau khi mất data vector DB
+
+### Tích Hợp Với NestJS Backend
+
+**Search proxy**: NestJS backend proxy semantic search request sang AI:
+```
+Frontend: POST /api/search/semantic { query, city?, min_stars? }
+  → NestJS SearchService.semanticSearch()
+    → POST http://ai:8000/ai/search (proxy nguyên request)
+  → AI embed query → Qdrant search → deduplicate → trả kết quả
+  → NestJS trả kết quả về Frontend
+```
+
+**Sync script**: Backend có `prisma/sync-ai.ts` gọi `POST /ai/sync` sau khi seed data.
 
 ### Consumer (`ai/consumer.py`)
 
@@ -157,6 +187,62 @@ Body: { messages: [...], conversation_id?: string, stream?: bool }
 
 - `stream=true` → SSE (`text/event-stream`), yield `{"chunk": "..."}`, kết thúc `[DONE]`
 - `stream=false` → JSON `{"content": "..."}`
+
+### Luồng End-to-End (Browser → NestJS → AI → Response)
+
+```
+Browser (Socket.io)
+  │
+  │ emit('sendMessage', { message: "find hotels in Danang", conversationId? })
+  ▼
+NestJS Chat Gateway (WebSocket, namespace /chat)
+  │ JWT auth trong handleConnection()
+  │ emit typing: true
+  │
+  │ chatService.handleMessage(userId, conversationId, message, onChunk)
+  │   1. Get or create ChatConversation (Prisma)
+  │   2. Save user message → ChatMessage(role=USER)
+  │   3. Call AI service: POST http://ai:8000/ai/chat (HTTP SSE)
+  │      body: { messages: [{role:"user", content: message}],
+  │              conversation_id: conversationId, stream: true }
+  │      ← CHỈ gửi message mới nhất (không gửi history)
+  │      ← LangGraph checkpoint tự quản lý full state
+  │
+  ▼
+AI Service (FastAPI, POST /ai/chat)
+  │
+  │ Stateful mode (có conversation_id):
+  │   config = {"configurable": {"thread_id": conversation_id}}
+  │   MemorySaver load checkpoint → khôi phục lịch sử + tool results
+  │   Agent xử lý → gọi tools nếu cần → stream response
+  │   MemorySaver tự lưu checkpoint mới sau response
+  │
+  │ Stateless mode (không có conversation_id):
+  │   CacheLayer.get(query) → BasicCache → SemanticCache → miss
+  │   Nếu hit: return cached response (không gọi LLM)
+  │   Nếu miss: agent.ainvoke() → CacheLayer.set()
+  │
+  │ Streaming SSE:
+  │   data: {"chunk": "The best"}\n\n
+  │   data: {"chunk": " hotels"}\n\n
+  │   ...
+  │   data: [DONE]\n\n
+  │
+  ▼
+NestJS Chat Gateway
+  │ Parse SSE: mỗi chunk → client.emit('messageChunk', {conversationId, chunk})
+  │ Accumulate full response
+  │ Save assistant message → ChatMessage(role=ASSISTANT)
+  │ emit typing: false
+  │ emit messageComplete { conversationId, content }
+  ▼
+Browser hiển thị response real-time
+```
+
+**Quan trọng:**
+- NestJS → AI là **HTTP SSE** (không phải WebSocket)
+- NestJS chỉ gửi **1 message mới nhất**, AI tự nhớ history qua LangGraph checkpoint
+- Error handling: nếu AI lỗi → NestJS trả fallback message, vẫn save vào DB
 
 ### Agent Setup (`chat/graph.py`)
 
@@ -243,24 +329,39 @@ CacheLayer
 
 ```
 POST /scraping/extract
-Body: { url: string, ... }
+Body: { url: string, extract_reviews?: bool }
+Response: { url, hotel: ExtractedHotelData, reviews: ExtractedReview[], raw_text_length }
 ```
 
 ### Luồng
 
 ```
-URL → Playwright.render()           # headless browser, full JS render
-    → BeautifulSoup.clean()         # strip scripts, nav, ads
-    → LLM(HTML + prompt)            # extract structured hotel data
-    → Response: { hotels: [...], reviews: [...] }
+URL → Playwright.render()           # headless browser, full JS render, networkidle + 3s wait
+    → BeautifulSoup.clean()         # strip scripts, style, nav, footer, header, svg
+    → LLM(clean_text + prompt)      # extract structured hotel data (temperature=0.1)
+    → nếu extract_reviews: LLM extract reviews
+    → Response: { hotel, reviews[], raw_text_length }
 ```
 
-### RabbitMQ Consumer (`scraping/consumer.py`)
+### 2 Cách Gọi — HTTP Direct vs RabbitMQ
 
+**1. HTTP Direct Call (chính, từ NestJS backend):**
 ```
-Event: crawler.job  →  scrape URL  →  publish crawler.completed
-                        (with extracted hotel + review data)
+NestJS Admin: POST /api/crawler/trigger { url }
+  → CrawlerService tạo CrawlJob(PENDING)
+  → Background: POST http://ai:8000/scraping/extract { url, extract_reviews }
+  → AI scrape (~10-30s) → trả kết quả
+  → NestJS tạo Hotel từ kết quả → link hotelId vào CrawlJob → COMPLETED
+  → emit hotel.created → EventBridge → RabbitMQ → AI embed vào Qdrant
 ```
+
+**2. RabbitMQ Consumer (vẫn hoạt động, dùng cho async jobs):**
+```
+Event: crawler.job → scrape URL → publish crawler.completed
+                      (with extracted hotel + review data)
+```
+
+**Lưu ý:** NestJS backend **chủ yếu dùng HTTP direct call** (cách 1) vì đơn giản hơn và không cần consumer infrastructure. RabbitMQ consumer vẫn tồn tại cho trường hợp async.
 
 ---
 
@@ -288,13 +389,13 @@ Exchange: `travelmind` (topic)
 | `booking.created` | ai.booking.created | booking/consumer.py |
 | `booking.confirmed` | ai.booking.confirmed | booking/consumer.py |
 | `booking.cancelled` | ai.booking.cancelled | booking/consumer.py |
-| `crawler.job` | ai.crawler.job | scraping/consumer.py |
+| `crawler.job` | ai.crawler.job | scraping/consumer.py (ít dùng — NestJS chủ yếu gọi HTTP trực tiếp) |
 
 **Published (bởi AI service):**
 
 | Routing Key | Nội dung |
 |-------------|---------|
-| `crawler.completed` | Extracted hotel + review data |
+| `crawler.completed` | Extracted hotel + review data (chỉ khi nhận qua RabbitMQ) |
 | `booking.analytics` | Booking event with action + metadata |
 
 ---
@@ -386,6 +487,19 @@ Server sẵn sàng tại:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 - Health: `http://localhost:8000/health`
+
+### Bước 5 — Sync Data Từ PostgreSQL → Qdrant
+
+```bash
+# Từ backend project (sau khi seed xong):
+cd ../backend && npx tsx prisma/sync-ai.ts
+
+# Hoặc gọi trực tiếp API:
+curl -X POST http://localhost:8000/ai/sync
+```
+
+Endpoint `/ai/sync` đọc tất cả hotels + reviews từ PostgreSQL, embed và upsert vào Qdrant.
+Chỉ cần chạy 1 lần sau khi seed, hoặc khi muốn rebuild Qdrant.
 
 ### Dùng Ollama Thay OpenAI (Local Dev)
 

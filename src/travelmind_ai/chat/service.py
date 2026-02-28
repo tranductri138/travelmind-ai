@@ -16,6 +16,7 @@ Two modes based on whether conversation_id is provided:
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -145,13 +146,15 @@ async def _stream_stateless(
             yield cached_response
             return
 
-    # Cache miss → run agent (no thread_id = no checkpoint)
+    # Cache miss → run agent (ephemeral thread_id for stateless)
     agent = get_agent()
     lc_messages = _to_langchain_messages(messages)
+    config = {"configurable": {"thread_id": f"stateless-{uuid.uuid4().hex}"}}
     full_response = ""
 
     async for event in agent.astream_events(
         {"messages": lc_messages},
+        config=config,
         version="v2",
     ):
         if event["event"] == "on_chat_model_stream":
@@ -179,10 +182,11 @@ async def _invoke_stateless(
             logger.info("CAG %s for chat: '%s'", status, last_msg[:60])
             return cached_response
 
-    # Cache miss → run agent
+    # Cache miss → run agent (ephemeral thread_id for stateless)
     agent = get_agent()
     lc_messages = _to_langchain_messages(messages)
-    result = await agent.ainvoke({"messages": lc_messages})
+    config = {"configurable": {"thread_id": f"stateless-{uuid.uuid4().hex}"}}
+    result = await agent.ainvoke({"messages": lc_messages}, config=config)
 
     ai_messages = [m for m in result["messages"] if isinstance(m, AIMessage) and m.content]
     response = (

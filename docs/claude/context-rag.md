@@ -9,6 +9,7 @@
 | POST | `/ai/search` | EmbeddingClient, AsyncQdrantClient | `semantic_search()` |
 | POST | `/ai/similar/{hotel_id}` | AsyncQdrantClient | `find_similar()` |
 | POST | `/ai/rag/itinerary` | LLMClient, EmbeddingClient, AsyncQdrantClient | `generate_itinerary()` |
+| POST | `/ai/sync` | AsyncSession, EmbeddingClient, AsyncQdrantClient | `sync_to_qdrant()` |
 
 ---
 
@@ -236,6 +237,30 @@ await qdrant_client.delete(collection_name="reviews", points_selector=Filter(...
 | `response_cache` | `UUID5(normalize(query))` | — |
 
 **Quan trọng**: Khi update hotel (hotel.updated), phải `delete_hotel_embeddings` trước rồi mới `embed_hotel` lại — vì số chunks có thể thay đổi, upsert không đủ để xóa chunks cũ thừa.
+
+---
+
+## Sync Pipeline (`POST /ai/sync`)
+
+```python
+async def sync_to_qdrant(db, embedding_client, qdrant_client):
+    # 1. Query tất cả active hotels từ PostgreSQL
+    hotels = await db.execute(select(Hotel).where(Hotel.is_active == True))
+    for hotel in hotels:
+        await embed_hotel(hotel_data, embedding_client, qdrant_client)
+
+    # 2. Query tất cả reviews
+    reviews = await db.execute(select(Review))
+    for review in reviews:
+        await embed_review(review_data, embedding_client, qdrant_client)
+
+    return { synced_hotels, total_hotels, synced_reviews, total_reviews }
+```
+
+**Khi nào dùng:**
+- Sau seed database lần đầu: `npx tsx prisma/sync-ai.ts` (từ backend)
+- Rebuild Qdrant từ scratch
+- Gọi trực tiếp: `curl -X POST http://localhost:8000/ai/sync`
 
 ---
 

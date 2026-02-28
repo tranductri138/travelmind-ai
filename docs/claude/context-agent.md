@@ -80,3 +80,22 @@ init_clients()          # tạo BasicCache → _cache_layer (tầng 1)
 init_semantic_cache()   # gọi sau Qdrant connect → thêm SemanticCache vào _cache_layer
 get_cache_layer()       # FastAPI Depends → CacheLayer singleton
 ```
+
+## Tích Hợp Với NestJS Backend
+
+NestJS Chat Module (WebSocket gateway, namespace `/chat`) gọi AI qua HTTP SSE:
+
+```
+Browser (Socket.io) → NestJS Chat Gateway (JWT auth)
+  → POST http://ai:8000/ai/chat (SSE)
+    body: { messages: [{role:"user", content}], conversation_id, stream: true }
+  ← SSE chunks: data: {"chunk": "..."}\n\n ... data: [DONE]\n\n
+  → NestJS parse chunks → emit('messageChunk') về browser
+  → Save full response vào PostgreSQL (ChatMessage, role=ASSISTANT)
+```
+
+**Quan trọng:**
+- NestJS chỉ gửi **1 message mới nhất**, KHÔNG gửi history
+- AI dùng `conversation_id` làm `thread_id` cho MemorySaver → tự khôi phục lịch sử
+- NestJS quản lý ChatConversation + ChatMessage trong PostgreSQL (CRUD, ownership check)
+- AI chỉ xử lý AI logic (agent, tools, streaming) — không touch database
