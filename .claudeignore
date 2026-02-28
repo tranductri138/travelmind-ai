@@ -1,0 +1,19 @@
+# Docs chỉ dành cho người đọc — Claude không cần
+ARCHITECTURE.md
+README.md
+
+# Thư viện, không phải code dự án
+.venv/
+
+# Cache, build artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# IDE, OS
+.idea/
+.vscode/
+*.DS_Store

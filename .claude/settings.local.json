@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync:*)",
+      "Bash(uv run:*)",
+      "Bash(source:*)",
+      "Bash(curl:*)",
+      "Bash(git status:*)",
+      "Bash(echo exit: $?:*)",
+      "Bash(git:*)",
+      "Bash(docker compose:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
