@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = "nomic-embed-text"
 
     # Database (read-only, shared with NestJS backend)
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/travelmind"
+    database_url: str = "postgresql+asyncpg://travelmind:secret@localhost:5432/travelmind"
 
     # RabbitMQ
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
