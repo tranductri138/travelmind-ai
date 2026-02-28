@@ -15,6 +15,7 @@ Load file phù hợp với task đang làm:
 | `docs/claude/context-api.md` | Làm endpoints, schemas, FastAPI Depends, middleware |
 | `docs/claude/context-events.md` | Làm RabbitMQ consumers, publishers, event flows |
 | `docs/claude/context-scraping.md` | Làm scraping, Playwright, LLM extraction, crawler events |
+| `docs/claude/context-rag.md` | Làm RAG itinerary, semantic search, similar hotels, embedding pipeline |
 
 ## Cách dùng
 
