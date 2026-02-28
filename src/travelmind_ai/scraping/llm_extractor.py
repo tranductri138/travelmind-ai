@@ -10,41 +10,42 @@ from travelmind_ai.shared.exceptions import ScrapingError
 logger = logging.getLogger(__name__)
 
 EXTRACT_HOTEL_PROMPT = """\
-You are a data extraction assistant. Given the following cleaned text from a hotel \
-webpage, extract structured hotel information. Return ONLY valid JSON matching this schema:
+Bạn là trợ lý trích xuất dữ liệu. Dựa trên đoạn văn bản đã được làm sạch từ trang web \
+khách sạn dưới đây, hãy trích xuất thông tin khách sạn có cấu trúc. Chỉ trả về JSON hợp lệ \
+theo schema sau:
 
 {{
-  "name": "string or null",
-  "description": "string or null",
-  "address": "string or null",
-  "city": "string or null",
-  "country": "string or null",
-  "stars": "integer 0-5 or null",
-  "amenities": ["list of strings"],
-  "images": ["list of image URLs"],
-  "contact_email": "string or null",
-  "contact_phone": "string or null",
-  "price_range": "string or null"
+  "name": "chuỗi hoặc null",
+  "description": "chuỗi hoặc null",
+  "address": "chuỗi hoặc null",
+  "city": "chuỗi hoặc null",
+  "country": "chuỗi hoặc null",
+  "stars": "số nguyên 0-5 hoặc null",
+  "amenities": ["danh sách chuỗi"],
+  "images": ["danh sách URL hình ảnh"],
+  "contact_email": "chuỗi hoặc null",
+  "contact_phone": "chuỗi hoặc null",
+  "price_range": "chuỗi hoặc null"
 }}
 
-Webpage text:
+Văn bản trang web:
 {text}
 """
 
 EXTRACT_REVIEWS_PROMPT = """\
-You are a data extraction assistant. Given the following cleaned text from a hotel \
-webpage, extract all guest reviews. Return ONLY a valid JSON array:
+Bạn là trợ lý trích xuất dữ liệu. Dựa trên đoạn văn bản đã được làm sạch từ trang web \
+khách sạn dưới đây, hãy trích xuất tất cả đánh giá của khách. Chỉ trả về mảng JSON hợp lệ:
 
 [
   {{
-    "author": "string or null",
-    "rating": "integer 1-5 or null",
-    "title": "string or null",
-    "comment": "string or null"
+    "author": "chuỗi hoặc null",
+    "rating": "số nguyên 1-5 hoặc null",
+    "title": "chuỗi hoặc null",
+    "comment": "chuỗi hoặc null"
   }}
 ]
 
-Webpage text:
+Văn bản trang web:
 {text}
 """
 
