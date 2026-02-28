@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection_hotels: str = "hotels"
     qdrant_collection_reviews: str = "reviews"
+    qdrant_collection_bookings: str = "bookings"
 
     # Embedding
     embedding_dimension: int = 1536

@@ -44,10 +44,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # Start RabbitMQ consumers only if both services are up
     if _rabbitmq_ok and _qdrant_ok:
         from travelmind_ai.ai.consumer import start_ai_consumers
+        from travelmind_ai.booking.consumer import start_booking_consumers
         from travelmind_ai.scraping.consumer import start_scraping_consumers
 
         await start_ai_consumers()
         await start_scraping_consumers()
+        await start_booking_consumers()
 
     yield
 
@@ -71,6 +73,8 @@ Python microservice powering the AI features of TravelMind:
 then ask the LLM to build a day-by-day travel plan
 - **Web Scraping** — headless browser (Playwright) + LLM extraction of structured \
 hotel data from any URL
+- **Booking Analytics** — embed and track booking events \
+(created, confirmed, cancelled) for analytics
 
 ### Architecture
 `NestJS backend` → REST / RabbitMQ → `this service` →
@@ -92,6 +96,10 @@ app = FastAPI(
         {
             "name": "Scraping",
             "description": "Headless browser scraping + LLM data extraction",
+        },
+        {
+            "name": "Booking",
+            "description": "Booking analytics and event processing",
         },
         {
             "name": "System",

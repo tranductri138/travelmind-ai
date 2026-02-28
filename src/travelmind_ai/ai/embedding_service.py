@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import PointStruct
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from travelmind_ai.config import settings
 from travelmind_ai.core.embedding import EmbeddingClient
@@ -88,3 +88,31 @@ async def embed_review(
         points=[point],
     )
     logger.info("Embedded review %s", review_data["id"])
+
+
+async def delete_hotel_embeddings(
+    hotel_id: str,
+    qdrant_client: AsyncQdrantClient,
+) -> None:
+    """Delete all embedding chunks for a hotel from Qdrant."""
+    await qdrant_client.delete(
+        collection_name=settings.qdrant_collection_hotels,
+        points_selector=Filter(
+            must=[FieldCondition(key="hotel_id", match=MatchValue(value=hotel_id))]
+        ),
+    )
+    logger.info("Deleted embeddings for hotel %s", hotel_id)
+
+
+async def delete_review_embedding(
+    review_id: str,
+    qdrant_client: AsyncQdrantClient,
+) -> None:
+    """Delete the embedding for a review from Qdrant."""
+    await qdrant_client.delete(
+        collection_name=settings.qdrant_collection_reviews,
+        points_selector=Filter(
+            must=[FieldCondition(key="review_id", match=MatchValue(value=review_id))]
+        ),
+    )
+    logger.info("Deleted embedding for review %s", review_id)

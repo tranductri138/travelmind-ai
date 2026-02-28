@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _on_scraping_job(data: dict[str, Any]) -> None:
-    """Handle scraping.job — crawl URL and publish result."""
+    """Handle crawler.job — crawl URL and publish result."""
     url = data.get("url")
     if not url:
         logger.warning("Scraping job missing url field")
@@ -24,7 +24,7 @@ async def _on_scraping_job(data: dict[str, Any]) -> None:
 
     await rabbitmq.publish(
         exchange_name="travelmind",
-        routing_key="scraping.completed",
+        routing_key="crawler.completed",
         body={
             "url": result.url,
             "hotel": result.hotel.model_dump(),
@@ -37,9 +37,9 @@ async def _on_scraping_job(data: dict[str, Any]) -> None:
 
 async def start_scraping_consumers() -> None:
     await rabbitmq.consume(
-        queue_name="ai.scraping.job",
+        queue_name="ai.crawler.job",
         exchange_name="travelmind",
-        routing_key="scraping.job",
+        routing_key="crawler.job",
         callback=_on_scraping_job,
     )
     logger.info("Scraping consumers started")

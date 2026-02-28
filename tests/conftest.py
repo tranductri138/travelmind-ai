@@ -25,6 +25,7 @@ def mock_embedding_client() -> AsyncMock:
 def mock_qdrant_client() -> AsyncMock:
     client = AsyncMock()
     client.upsert.return_value = None
+    client.delete.return_value = None
     client.search.return_value = []
     client.close.return_value = None
     return client
@@ -56,4 +57,23 @@ def sample_review_data() -> dict:
         "rating": 5,
         "title": "Amazing stay",
         "comment": "Beautiful hotel with excellent service and great location.",
+    }
+
+
+@pytest.fixture
+def sample_booking_data() -> dict:
+    return {
+        "id": "booking-001",
+        "user_id": "user-789",
+        "room_id": "room-101",
+        "check_in": "2026-03-15",
+        "check_out": "2026-03-20",
+        "guests": 2,
+        "total_price": 750.00,
+        "currency": "USD",
+        "status": "PENDING",
+        "special_requests": "Late check-in",
+        "hotel_name": "Grand Palace Hotel",
+        "hotel_city": "Paris",
+        "hotel_country": "France",
     }

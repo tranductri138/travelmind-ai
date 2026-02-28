@@ -36,7 +36,11 @@ def get_client() -> AsyncQdrantClient:
 
 async def _ensure_collections() -> None:
     assert _client is not None
-    for name in [settings.qdrant_collection_hotels, settings.qdrant_collection_reviews]:
+    for name in [
+        settings.qdrant_collection_hotels,
+        settings.qdrant_collection_reviews,
+        settings.qdrant_collection_bookings,
+    ]:
         if not await _client.collection_exists(name):
             await _client.create_collection(
                 collection_name=name,

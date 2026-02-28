@@ -10,6 +10,7 @@ def test_default_settings():
     assert s.llm_provider == "openai"
     assert s.embedding_dimension == 1536
     assert s.qdrant_collection_hotels == "hotels"
+    assert s.qdrant_collection_bookings == "bookings"
 
 
 def test_ollama_settings():

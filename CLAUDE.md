@@ -34,11 +34,15 @@ src/travelmind_ai/
 │   ├── *_service.py     # Business logic (embedding, search, rag)
 │   ├── prompts.py       # LLM prompt templates
 │   └── consumer.py      # RabbitMQ: hotel.created/updated, review.created → auto embed
+├── booking/             # Booking analytics + event processing
+│   ├── schemas.py       # BookingEventData, BookingAnalyticsEvent
+│   ├── service.py       # Embed/delete bookings in Qdrant
+│   └── consumer.py      # RabbitMQ: booking.created/confirmed/cancelled
 ├── scraping/            # Web scraping + LLM extraction
 │   ├── router.py        # POST /scraping/extract
 │   ├── browser.py       # Playwright lifecycle
 │   ├── llm_extractor.py # HTML → LLM → structured JSON
-│   └── consumer.py      # RabbitMQ: scraping.job → scraping.completed
+│   └── consumer.py      # RabbitMQ: crawler.job → crawler.completed
 └── shared/              # Middleware, exceptions, text_utils (chunking, tiktoken)
 tests/                   # pytest + pytest-asyncio, mocked external services
 ```
@@ -73,14 +77,19 @@ Prisma source: `/home/admin1/Documents/TRAVELMIND/backend/prisma/schema.prisma`
 
 Exchange: `travelmind` (topic)
 
-| Consumed (from NestJS)  | Queue                | Action                    |
-|-------------------------|----------------------|---------------------------|
-| `hotel.created`         | ai.hotel.created     | Embed hotel into Qdrant   |
-| `hotel.updated`         | ai.hotel.updated     | Re-embed hotel            |
-| `review.created`        | ai.review.created    | Embed review into Qdrant  |
-| `scraping.job`          | ai.scraping.job      | Scrape URL → publish result |
+| Consumed (from NestJS)  | Queue                  | Action                         |
+|-------------------------|------------------------|--------------------------------|
+| `hotel.created`         | ai.hotel.created       | Embed hotel into Qdrant        |
+| `hotel.updated`         | ai.hotel.updated       | Re-embed hotel                 |
+| `hotel.deleted`         | ai.hotel.deleted       | Delete hotel embeddings        |
+| `review.created`        | ai.review.created      | Embed review into Qdrant       |
+| `review.deleted`        | ai.review.deleted      | Delete review embedding        |
+| `booking.created`       | ai.booking.created     | Embed booking + analytics      |
+| `booking.confirmed`     | ai.booking.confirmed   | Re-embed + analytics           |
+| `booking.cancelled`     | ai.booking.cancelled   | Delete embedding + analytics   |
+| `crawler.job`           | ai.crawler.job         | Scrape URL → publish result    |
 
-Published: `scraping.completed` (with extracted hotel data + reviews)
+Published: `crawler.completed` (with extracted hotel data + reviews), `booking.analytics` (booking events)
 
 ## Key Design Decisions
 
