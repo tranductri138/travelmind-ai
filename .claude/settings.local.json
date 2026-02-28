@@ -10,7 +10,8 @@
       "Bash(git:*)",
       "Bash(docker compose:*)",
       "Bash(find:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Skill(git:commit)"
     ]
   }
 }

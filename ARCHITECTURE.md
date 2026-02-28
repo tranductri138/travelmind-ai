@@ -327,3 +327,194 @@ Exchange: `travelmind` (topic)
 - Framework: `pytest` + `pytest-asyncio`
 - Tất cả external services được mock (không cần Qdrant/RabbitMQ/PostgreSQL thật)
 - Chạy: `uv run pytest -v` (17 tests)
+
+---
+
+## 14. Chạy Project
+
+### Yêu Cầu
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (package manager)
+- Docker + Docker Compose
+
+### Bước 1 — Cài Dependencies
+
+```bash
+uv sync          # tạo .venv + cài tất cả dependencies
+```
+
+### Bước 2 — Cấu Hình `.env`
+
+```bash
+cp .env.example .env
+```
+
+Chỉnh sửa `.env`:
+
+| Biến | Bắt buộc | Ghi chú |
+|------|---------|---------|
+| `OPENAI_API_KEY` | Có (nếu dùng OpenAI) | Lấy từ platform.openai.com |
+| `DATABASE_URL` | Có | PostgreSQL của NestJS backend |
+| `LLM_PROVIDER` | Không | `openai` (mặc định) hoặc `ollama` |
+| `RABBITMQ_URL` | Không | Mặc định: `amqp://guest:guest@localhost:5672/` |
+| `QDRANT_URL` | Không | Mặc định: `http://localhost:6333` |
+
+### Bước 3 — Khởi Động Infrastructure
+
+```bash
+docker compose up -d
+```
+
+Khởi động:
+- **RabbitMQ**: `localhost:5672` — Management UI: `http://localhost:15672` (guest/guest)
+- **Qdrant**: `localhost:6333` — Dashboard: `http://localhost:6333/dashboard`
+
+Kiểm tra đã chạy:
+```bash
+docker compose ps      # cả 2 service phải ở trạng thái healthy
+```
+
+### Bước 4 — Chạy Server
+
+```bash
+uv run uvicorn travelmind_ai.main:app --reload --port 8000
+```
+
+Server sẵn sàng tại:
+- API: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- Health: `http://localhost:8000/health`
+
+### Dùng Ollama Thay OpenAI (Local Dev)
+
+```bash
+# Cài và khởi động Ollama (https://ollama.com)
+ollama pull llama3.2
+ollama pull nomic-embed-text
+
+# Trong .env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+### Chạy Tests (Không Cần Infrastructure)
+
+```bash
+uv run pytest -v           # chạy 17 tests (tất cả mock)
+uv run pytest --cov        # kèm coverage report
+```
+
+### Lint
+
+```bash
+uv run ruff check src/ --fix
+```
+
+---
+
+## 15. Trace Lỗi
+
+### Kiểm Tra Nhanh
+
+```bash
+# 1. Health check — trạng thái kết nối live
+curl http://localhost:8000/health
+# {"status":"ok","rabbitmq":"connected","qdrant":"connected"}
+
+# 2. Xem log server
+# Log level mặc định: info. Để verbose hơn, set LOG_LEVEL=debug trong .env
+
+# 3. Trạng thái containers
+docker compose ps
+docker compose logs rabbitmq
+docker compose logs qdrant
+```
+
+### Bảng Lỗi Thường Gặp
+
+| Triệu Chứng | Nguyên Nhân | Cách Fix |
+|-------------|------------|---------|
+| `RabbitMQ unavailable — consumers disabled` (log lúc startup) | RabbitMQ chưa chạy | `docker compose up -d rabbitmq` |
+| `Qdrant unavailable — vector search disabled` (log lúc startup) | Qdrant chưa chạy | `docker compose up -d qdrant` |
+| `/health` trả về `"rabbitmq": "disconnected"` | RabbitMQ down hoặc sai URL | Kiểm tra `RABBITMQ_URL` trong `.env` |
+| `/health` trả về `"qdrant": "disconnected"` | Qdrant down hoặc sai URL | Kiểm tra `QDRANT_URL` trong `.env` |
+| HTTP 502 `LLM request failed` | LLM call thất bại | Xem chi tiết bên dưới |
+| HTTP 502 `Embedding generation failed` | Embedding call thất bại | Xem chi tiết bên dưới |
+| HTTP 502 `Scraping failed` | Playwright timeout hoặc LLM parse lỗi | URL không hợp lệ hoặc trang chặn bot |
+| Consumers không start (không thấy log `consumers started`) | Một trong hai: RabbitMQ hoặc Qdrant không kết nối được | Kiểm tra `/health` |
+| `asyncpg` connection error | PostgreSQL sai URL hoặc chưa chạy | Kiểm tra `DATABASE_URL` trong `.env` |
+| `pydantic_settings` error lúc startup | Thiếu biến `.env` bắt buộc | Đối chiếu với `.env.example` |
+
+### Lỗi LLM (HTTP 502)
+
+**Nếu dùng OpenAI:**
+```
+AuthenticationError → OPENAI_API_KEY sai hoặc hết hạn
+RateLimitError      → Vượt quota, thử lại sau
+```
+
+**Nếu dùng Ollama:**
+```bash
+# Kiểm tra Ollama đang chạy
+ollama list         # phải thấy llama3.2 và nomic-embed-text
+
+# Nếu thiếu model
+ollama pull llama3.2
+ollama pull nomic-embed-text
+
+# Kiểm tra OLLAMA_BASE_URL trong .env
+# Mặc định: http://localhost:11434
+```
+
+### Lỗi Scraping (HTTP 502)
+
+```
+ScrapingError: LLM extraction failed → LLM không parse được JSON từ HTML
+  → Thử với URL đơn giản hơn, hoặc trang hotel cụ thể
+  → Kiểm tra trang không yêu cầu login/CAPTCHA
+
+Playwright timeout (30s) → Trang load quá chậm hoặc bị block
+  → Thử lại, hoặc dùng URL khác
+```
+
+### Lỗi Chat / Agent
+
+```
+Agent không gọi tool → Kiểm tra system prompt trong chat/prompts.py
+Stateful chat không nhớ lịch sử → Đảm bảo gửi cùng conversation_id
+CAG luôn miss → SemanticCache chưa init (Qdrant disconnected) → check /health
+```
+
+### Trace Theo X-Correlation-ID
+
+Mọi request đều có header `X-Correlation-ID` (tự tạo nếu không gửi):
+
+```bash
+# Gửi request với correlation ID tự đặt
+curl -H "X-Correlation-ID: my-debug-id-123" http://localhost:8000/ai/search ...
+
+# Tìm trong log
+# [INFO] ... correlation_id=my-debug-id-123 ...
+```
+
+### Debug Qdrant Collections
+
+```bash
+# Xem collections và số lượng points
+curl http://localhost:6333/collections
+
+# Xem collection cụ thể
+curl http://localhost:6333/collections/hotels
+```
+
+### Reset Hoàn Toàn (Xóa Dữ Liệu)
+
+```bash
+# Xóa toàn bộ data Qdrant + RabbitMQ (volumes)
+docker compose down -v
+
+# Khởi động lại sạch
+docker compose up -d
+```
