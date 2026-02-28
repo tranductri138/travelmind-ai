@@ -1,6 +1,6 @@
 # TravelMind AI Service
 
-Python microservice (FastAPI) — semantic search, RAG itineraries, web scraping.
+Python microservice (FastAPI) — semantic search, RAG itineraries, AI chat agent, web scraping.
 Connects to NestJS backend via REST + RabbitMQ.
 
 ## Quick Start
@@ -15,7 +15,8 @@ uv run uvicorn travelmind_ai.main:app --reload    # http://localhost:8000
 
 - **Python 3.12**, FastAPI, uv (package manager)
 - **LLM**: OpenAI (prod) / Ollama (dev) — switch via `LLM_PROVIDER` env
-- **Vector DB**: Qdrant (port 6333) — collections: `hotels`, `reviews`
+- **Agent**: LangGraph (`langgraph>=0.2`), LangChain (`langchain-openai>=0.3`)
+- **Vector DB**: Qdrant (port 6333) — collections: `hotels`, `reviews`, `bookings`, `response_cache`
 - **Message Queue**: RabbitMQ (port 5672, mgmt 15672)
 - **Database**: PostgreSQL via asyncpg — **READ-ONLY** (owned by NestJS/Prisma)
 - **Scraping**: Playwright + BeautifulSoup + LLM extraction
@@ -27,7 +28,8 @@ src/travelmind_ai/
 ├── main.py              # FastAPI app, lifespan (startup/shutdown)
 ├── config.py            # Pydantic Settings, loaded from .env
 ├── dependencies.py      # FastAPI Depends: get_llm_client, get_db_session, etc.
-├── core/                # Infrastructure clients (database, rabbitmq, qdrant, llm, embedding)
+├── core/                # Infrastructure clients (database, rabbitmq, qdrant, llm, embedding, cache)
+│   └── cache.py         # CAG: BasicCache (LRU) + SemanticCache (Qdrant vector similarity)
 ├── ai/                  # Semantic search, similar hotels, RAG itinerary
 │   ├── router.py        # POST /ai/search, /ai/similar/{id}, /ai/rag/itinerary
 │   ├── schemas.py       # Request/response Pydantic models
@@ -38,6 +40,13 @@ src/travelmind_ai/
 │   ├── schemas.py       # BookingEventData, BookingAnalyticsEvent
 │   ├── service.py       # Embed/delete bookings in Qdrant
 │   └── consumer.py      # RabbitMQ: booking.created/confirmed/cancelled
+├── chat/                # LangGraph ReAct agent (AI chat)
+│   ├── router.py        # POST /ai/chat (SSE streaming or non-streaming)
+│   ├── schemas.py       # ChatMessage, ChatRequest (with conversation_id), ChatResponse
+│   ├── prompts.py       # Agent system prompt with tool usage instructions
+│   ├── tools.py         # 4 @tool functions: search_hotels, get_hotel_details, check_room_availability, get_popular_hotels
+│   ├── graph.py         # LangGraph ReAct agent with MemorySaver checkpointer
+│   └── service.py       # Stateful (checkpoint, no CAG) and Stateless (CAG, no checkpoint) modes
 ├── scraping/            # Web scraping + LLM extraction
 │   ├── router.py        # POST /scraping/extract
 │   ├── browser.py       # Playwright lifecycle
@@ -90,6 +99,29 @@ Exchange: `travelmind` (topic)
 | `crawler.job`           | ai.crawler.job         | Scrape URL → publish result    |
 
 Published: `crawler.completed` (with extracted hotel data + reviews), `booking.analytics` (booking events)
+
+## Chat Module (LangGraph Agent)
+
+**Endpoint**: `POST /ai/chat` — supports SSE streaming and non-streaming responses.
+
+**Architecture**: LangGraph ReAct agent (not simple RAG). The agent reasons step-by-step and invokes tools to answer travel queries.
+
+**4 LangChain tools** (`chat/tools.py`):
+- `search_hotels` — semantic search via Qdrant embeddings
+- `get_hotel_details` — fetch full hotel info from PostgreSQL
+- `check_room_availability` — query available rooms for dates
+- `get_popular_hotels` — top-rated hotels by city/country
+
+**Two operating modes** (`chat/service.py`):
+- **Stateful**: Uses LangGraph `MemorySaver` checkpointer keyed by `conversation_id`. Full conversation history is preserved across requests. No CAG (every request hits the LLM).
+- **Stateless**: Uses CAG (Cache-Augmented Generation) to skip the LLM when a cached response is available. No checkpointing (each request is independent).
+
+**CAG (Cache-Augmented Generation)** (`core/cache.py`):
+- `BasicCache` — in-memory LRU cache with configurable max size and TTL
+- `SemanticCache` — Qdrant-backed vector similarity cache (collection: `response_cache`, threshold: 0.95). Falls back to BasicCache on Qdrant failure.
+- Config: `cag_basic_max_size`, `cag_basic_ttl`, `cag_semantic_threshold` (0.95), `cag_semantic_ttl`, `qdrant_collection_cache`
+
+**Initialization**: `dependencies.py` exposes `init_semantic_cache()` and `get_cache_layer()` singletons. `main.py` calls `init_semantic_cache()` after Qdrant connects at startup.
 
 ## Key Design Decisions
 

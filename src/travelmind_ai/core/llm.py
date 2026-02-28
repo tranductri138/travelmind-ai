@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import httpx
@@ -45,6 +46,26 @@ class LLMClient:
         response = await self._client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
         return content or ""
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> AsyncGenerator[str]:
+        """Stream chat completions, yielding content chunks."""
+        stream = await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,  # type: ignore[arg-type]
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for event in stream:
+            delta = event.choices[0].delta
+            if delta.content:
+                yield delta.content
 
     async def close(self) -> None:
         await self._client.close()

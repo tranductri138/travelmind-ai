@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date as date_type
 from datetime import datetime
 
 from sqlalchemy import (
     ARRAY,
     Boolean,
+    Date,
     DateTime,
     Float,
     Integer,
@@ -76,6 +78,7 @@ class Room(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
     hotel: Mapped[Hotel] = relationship(back_populates="rooms")
+    availability: Mapped[list[RoomAvailability]] = relationship(back_populates="room", lazy="selectin")
 
 
 class Review(Base):
@@ -95,3 +98,19 @@ class Review(Base):
     hotel: Mapped[Hotel] = relationship(back_populates="reviews")
 
     __table_args__ = (UniqueConstraint("user_id", "hotel_id"),)
+
+
+class RoomAvailability(Base):
+    """Read-only mapping of Prisma RoomAvailability model."""
+
+    __tablename__ = "room_availability"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    room_id: Mapped[str] = mapped_column(String)
+    date: Mapped[date_type] = mapped_column(Date)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    price: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+    room: Mapped[Room] = relationship(back_populates="availability")

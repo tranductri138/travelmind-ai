@@ -16,10 +16,12 @@
 7. [Module AI - Tim Kiem Ngu Nghia & RAG](#7-module-ai---tim-kiem-ngu-nghia--rag)
 8. [Module Scraping - Thu Thap Du Lieu Web](#8-module-scraping---thu-thap-du-lieu-web)
 9. [Module Booking - Phan Tich Dat Phong](#9-module-booking---phan-tich-dat-phong)
-10. [Shared - Tien Ich Dung Chung](#10-shared---tien-ich-dung-chung)
-11. [RabbitMQ - He Thong Event Chi Tiet](#11-rabbitmq---he-thong-event-chi-tiet)
-12. [Qdrant - Vector Database Chi Tiet](#12-qdrant---vector-database-chi-tiet)
-13. [Tests](#13-tests)
+10. [Module Chat — AI Agent (LangGraph)](#10-module-chat--ai-agent-langgraph)
+11. [CAG — Cache-Augmented Generation](#11-cag--cache-augmented-generation)
+12. [Shared - Tien Ich Dung Chung](#12-shared---tien-ich-dung-chung)
+13. [RabbitMQ - He Thong Event Chi Tiet](#13-rabbitmq---he-thong-event-chi-tiet)
+14. [Qdrant - Vector Database Chi Tiet](#14-qdrant---vector-database-chi-tiet)
+15. [Tests](#15-tests)
 
 ---
 
@@ -868,9 +870,183 @@ async def _publish_analytics(data, action):
 
 ---
 
-## 10. Shared - Tien Ich Dung Chung
+## 10. Module Chat — AI Agent (LangGraph)
 
-### 10.1. exceptions.py — Xu Ly Loi
+### Tong Quan
+
+Module chat cung cap **AI travel agent** — khong phai chatbot thuan RAG. Agent co kha nang:
+- **Function calling** — Goi tool de truy van du lieu thuc (search hotels, check availability)
+- **Checkpointing** — Nho full conversation state (messages + tool calls + tool results) giua cac luot chat
+- **CAG** — Cache response de giam chi phi LLM
+
+### Cau Truc Thu Muc
+
+```
+src/travelmind_ai/chat/
+├── __init__.py
+├── router.py        # POST /ai/chat — SSE streaming hoac JSON
+├── graph.py         # LangGraph ReAct agent + MemorySaver checkpointer
+├── tools.py         # 4 LangChain @tool functions
+├── service.py       # Stateful (checkpoint) + Stateless (CAG) modes
+├── prompts.py       # Agent system prompt
+└── schemas.py       # ChatRequest, ChatResponse, ChatMessage
+```
+
+### LangGraph ReAct Agent (graph.py)
+
+Agent duoc tao bang `create_react_agent` tu `langgraph.prebuilt`:
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.prebuilt import create_react_agent
+
+_checkpointer = MemorySaver()
+_agent = create_react_agent(
+    model=llm,              # ChatOpenAI (OpenAI hoac Ollama)
+    tools=ALL_TOOLS,        # 4 tools
+    prompt=system_prompt,   # Travel agent instructions
+    checkpointer=_checkpointer,
+)
+```
+
+- **Singleton pattern**: `get_agent()` tao 1 lan, dung lai
+- **MemorySaver**: Luu state in-memory, keyed by `thread_id` = `conversation_id`
+- Co the swap sang `AsyncPostgresSaver` de persistent across restarts
+
+### Tools (tools.py)
+
+4 LangChain `@tool` functions ma agent co the goi:
+
+| Tool | Input | Data Source | Mo ta |
+|------|-------|-------------|-------|
+| `search_hotels` | query, city?, min_stars? | Qdrant vector search + PostgreSQL | Tim hotel bang ngon ngu tu nhien |
+| `get_hotel_details` | hotel_id | PostgreSQL | Chi tiet hotel + rooms + reviews |
+| `check_room_availability` | hotel_id, check_in, check_out, guests | PostgreSQL | Kiem tra phong trong |
+| `get_popular_hotels` | city?, limit | PostgreSQL | Top hotels theo rating |
+
+Moi tool:
+1. Truy van du lieu thuc (Qdrant hoac PostgreSQL)
+2. Format ket qua thanh string de agent doc
+3. Agent quyet dinh dung tool nao dua tren cau hoi user
+
+### Service (service.py) — Hai Che Do
+
+**Stateful** (co `conversation_id`):
+```
+Request → _stream_stateful() → agent.astream_events(config={"thread_id": conv_id})
+                                  ↓
+                           MemorySaver load checkpoint
+                                  ↓
+                           Agent xu ly (co the goi tools)
+                                  ↓
+                           Stream chunks ve (filter on_chat_model_stream)
+                                  ↓
+                           MemorySaver save checkpoint
+```
+- Khong dung CAG vi response phu thuoc context truoc do
+- Agent nho tool calls va tool results tu cac luot truoc
+
+**Stateless** (khong `conversation_id`):
+```
+Request → _stream_stateless() → CAG check cache
+                                  ↓ miss
+                               agent.astream_events() (khong thread_id)
+                                  ↓
+                               Stream chunks
+                                  ↓
+                               CAG write cache
+```
+- Dung CAG de cache repeated queries
+- One-shot, khong checkpoint
+
+### Router (router.py)
+
+```python
+@router.post("/ai/chat", response_model=None)
+async def chat_endpoint(request: ChatRequest):
+    # request.stream = True → StreamingResponse (SSE)
+    # request.stream = False → ChatResponse (JSON)
+    # request.conversation_id → stateful mode
+```
+
+SSE format:
+```
+data: {"chunk": "Here are some"}\n\n
+data: {"chunk": " hotels in"}\n\n
+data: {"chunk": " Danang..."}\n\n
+data: [DONE]\n\n
+```
+
+### Checkpointing — Vi Du Cu The
+
+```
+Turn 1: User: "find hotels in Danang"
+  → Agent goi search_hotels("beach hotels Danang")
+  → Tool tra ve 5 hotels voi IDs
+  → Agent tra loi: "Here are 5 hotels: 1. Fusion Maia..."
+  → MemorySaver luu: [HumanMessage, ToolCall, ToolResult, AIMessage]
+
+Turn 2: User: "tell me about the 2nd one"
+  → MemorySaver load checkpoint → thay tool_result co hotel IDs
+  → Agent goi get_hotel_details(hotel_id_2) truc tiep (khong search lai)
+  → Agent tra loi chi tiet hotel thu 2
+```
+
+---
+
+## 11. CAG — Cache-Augmented Generation
+
+### Core: cache.py
+
+3 class chinh trong `core/cache.py`:
+
+**BasicCache** — In-memory LRU:
+- Dict + OrderedDict de O(1) get/set
+- TTL (time-to-live) — entry het han tu dong xoa
+- Max size — LRU eviction khi day
+- Normalize query (lowercase, strip) truoc khi lookup
+
+**SemanticCache** — Qdrant vector similarity:
+- Embed query → search Qdrant collection `response_cache` (cosine similarity)
+- Threshold 0.95 — chi tra ve neu similarity >= 95%
+- TTL — moi point co `created_at` metadata, auto-clean stale entries
+- Graceful degradation — neu Qdrant khong available, return None
+
+**CacheLayer** — Ket hop 2 tier:
+```
+query → BasicCache.get() → hit → return (free, 0 API calls)
+                          → miss → SemanticCache.get() → hit → promote to BasicCache → return (1 embed call)
+                                                        → miss → return None → Agent xu ly → cache response
+```
+
+### Config (config.py)
+
+| Setting | Default | Mo ta |
+|---------|---------|-------|
+| `cag_basic_max_size` | 1000 | So luong entry toi da trong BasicCache |
+| `cag_basic_ttl` | 3600 | TTL (giay) cho BasicCache |
+| `cag_semantic_threshold` | 0.95 | Cosine similarity threshold |
+| `cag_semantic_ttl` | 86400 | TTL (giay) cho SemanticCache |
+| `qdrant_collection_cache` | "response_cache" | Qdrant collection cho semantic cache |
+
+### Initialization
+
+```python
+# dependencies.py
+def init_clients():
+    _cache_layer = CacheLayer(basic_cache=BasicCache(...))  # BasicCache luon co
+
+async def init_semantic_cache():
+    # Goi sau khi Qdrant connect thanh cong
+    semantic = SemanticCache(qdrant_client, embed_client, ...)
+    _cache_layer.set_semantic(semantic)
+```
+
+---
+
+## 12. Shared - Tien Ich Dung Chung
+
+### 12.1. exceptions.py — Xu Ly Loi
 
 File: `src/travelmind_ai/shared/exceptions.py`
 
@@ -884,7 +1060,7 @@ class EmbeddingError(AppError):  # Loi tao embedding — 502
 502 Bad Gateway — vi loi xay ra o **service ben ngoai** (OpenAI, Ollama, website), khong phai
 loi cua API nay.
 
-### 10.2. middleware.py — Theo Doi Request
+### 12.2. middleware.py — Theo Doi Request
 
 File: `src/travelmind_ai/shared/middleware.py`
 
@@ -902,7 +1078,7 @@ class CorrelationIDMiddleware(BaseHTTPMiddleware):
 AI service giu nguyen ID do va tra lai trong response. Nhu vay trong log cua CA HAI service,
 ban co the tim tat ca log lien quan den 1 request bang cung 1 ID.
 
-### 10.3. text_utils.py — Xu Ly Van Ban
+### 12.3. text_utils.py — Xu Ly Van Ban
 
 File: `src/travelmind_ai/shared/text_utils.py`
 
@@ -944,7 +1120,7 @@ def build_hotel_text(name, city, country, description, amenities, stars, rating)
 
 ---
 
-## 11. RabbitMQ - He Thong Event Chi Tiet
+## 13. RabbitMQ - He Thong Event Chi Tiet
 
 ### Khai niem co ban:
 
@@ -1026,7 +1202,7 @@ NestJS Backend                   RabbitMQ                    AI Service
 
 ---
 
-## 12. Qdrant - Vector Database Chi Tiet
+## 14. Qdrant - Vector Database Chi Tiet
 
 ### Vector Embedding la gi?
 
@@ -1041,7 +1217,7 @@ thi vector THAN nhau.
 
 **Cosine Similarity** = do do tuong dong giua 2 vector (0 = khac hoan toan, 1 = giong het).
 
-### 3 Collection trong Qdrant:
+### 4 Collection trong Qdrant:
 
 **hotels** — moi hotel co 1+ diem (chunked)
 ```json
@@ -1090,6 +1266,23 @@ thi vector THAN nhau.
 }
 ```
 
+**response_cache** — moi cached response co 1 diem (CAG semantic cache)
+```json
+{
+  "id": "uuid-auto-generated",
+  "vector": [0.55, -0.28, ...],
+  "payload": {
+    "query": "best hotels in danang with pool",
+    "response": "Here are the top hotels in Danang with pool facilities: 1. ...",
+    "created_at": "2026-02-28T10:30:00Z"
+  }
+}
+```
+- Dung boi `SemanticCache` trong CAG module
+- Query moi duoc embed va so sanh cosine similarity voi cac entry da luu
+- Threshold 0.95 — chi tra ve cached response neu cau hoi gan giong (>= 95%)
+- Entry co TTL, tu dong xoa khi het han
+
 ### Tim kiem trong Qdrant:
 
 ```python
@@ -1101,7 +1294,7 @@ thi vector THAN nhau.
 
 ---
 
-## 13. Tests
+## 15. Tests
 
 Toan bo test **KHONG** ket noi service that — dung **mock** (gia lap).
 

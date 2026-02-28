@@ -40,6 +40,7 @@ async def _ensure_collections() -> None:
         settings.qdrant_collection_hotels,
         settings.qdrant_collection_reviews,
         settings.qdrant_collection_bookings,
+        settings.qdrant_collection_cache,
     ]:
         if not await _client.collection_exists(name):
             await _client.create_collection(

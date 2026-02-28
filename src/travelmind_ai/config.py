@@ -35,9 +35,16 @@ class Settings(BaseSettings):
     qdrant_collection_hotels: str = "hotels"
     qdrant_collection_reviews: str = "reviews"
     qdrant_collection_bookings: str = "bookings"
+    qdrant_collection_cache: str = "response_cache"
 
     # Embedding
     embedding_dimension: int = 1536
+
+    # CAG (Cache-Augmented Generation)
+    cag_basic_max_size: int = 1000
+    cag_basic_ttl: int = 3600  # 1 hour
+    cag_semantic_threshold: float = 0.95
+    cag_semantic_ttl: int = 3600  # 1 hour
 
 
 settings = Settings()

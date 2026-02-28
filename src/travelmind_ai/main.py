@@ -8,7 +8,7 @@ from fastapi import FastAPI
 
 from travelmind_ai.config import settings
 from travelmind_ai.core import qdrant, rabbitmq
-from travelmind_ai.dependencies import init_clients, shutdown_clients
+from travelmind_ai.dependencies import init_clients, init_semantic_cache, shutdown_clients
 from travelmind_ai.shared.exceptions import register_exception_handlers
 from travelmind_ai.shared.middleware import CorrelationIDMiddleware
 
@@ -38,6 +38,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     try:
         await qdrant.connect()
         _qdrant_ok = True
+        # Initialise semantic cache now that Qdrant is available
+        init_semantic_cache()
     except Exception:
         logger.warning("Qdrant unavailable — vector search disabled. Start Qdrant to enable.")
 
@@ -73,6 +75,7 @@ Python microservice powering the AI features of TravelMind:
 then ask the LLM to build a day-by-day travel plan
 - **Web Scraping** — headless browser (Playwright) + LLM extraction of structured \
 hotel data from any URL
+- **AI Chat** — conversational travel assistant with RAG-powered hotel recommendations
 - **Booking Analytics** — embed and track booking events \
 (created, confirmed, cancelled) for analytics
 
@@ -98,6 +101,10 @@ app = FastAPI(
             "description": "Headless browser scraping + LLM data extraction",
         },
         {
+            "name": "Chat",
+            "description": "AI chat assistant with RAG-powered hotel recommendations",
+        },
+        {
             "name": "Booking",
             "description": "Booking analytics and event processing",
         },
@@ -113,9 +120,11 @@ register_exception_handlers(app)
 
 # Routers
 from travelmind_ai.ai.router import router as ai_router  # noqa: E402
+from travelmind_ai.chat.router import router as chat_router  # noqa: E402
 from travelmind_ai.scraping.router import router as scraping_router  # noqa: E402
 
 app.include_router(ai_router)
+app.include_router(chat_router)
 app.include_router(scraping_router)
 
 

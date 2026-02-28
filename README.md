@@ -6,10 +6,11 @@ Python microservice xử lý AI/LLM và Web Scraping cho nền tảng TravelMind
 
 ## Vai trò trong hệ thống
 
-Service này là **worker chuyên biệt**, chỉ đảm nhận 2 việc mà Python làm tốt hơn Node.js:
+Service này là **worker chuyên biệt**, chỉ đảm nhận 3 việc mà Python làm tốt hơn Node.js:
 
 1. **AI/LLM** — Text Embeddings, Vector Search, RAG
-2. **Web Scraping** — Thu thập dữ liệu + bóc tách bằng AI
+2. **AI Chat Agent** — LangGraph ReAct agent with function calling, checkpointing, CAG
+3. **Web Scraping** — Thu thập dữ liệu + bóc tách bằng AI
 
 Mọi thứ khác (Auth, CRUD, Booking, Payment...) thuộc về [NestJS Backend](../backend). Service này không có UI, không public API — chỉ NestJS gọi vào qua REST internal và RabbitMQ.
 
@@ -37,6 +38,9 @@ Client ──► NestJS Backend (port 3000) ──► Python AI Service (port 80
 | Queue | RabbitMQ (aio-pika) | Dùng chung broker với NestJS |
 | Scraping | Playwright + BeautifulSoup4 | Playwright render JS, BS4 parse |
 | AI Extraction | LLM-based parsing | Robust hơn CSS selectors |
+| Agent Framework | LangGraph (ReAct agent) | Function calling, checkpointing built-in |
+| LangChain | langchain-openai | Chat model integration for LangGraph |
+| Caching | CAG (BasicCache + SemanticCache) | LRU in-memory + Qdrant vector similarity |
 | Linting | Ruff | Cùng team Astral, cực nhanh |
 
 ---
@@ -62,7 +66,8 @@ travelmind-ai/
 │   │   ├── rabbitmq.py         # aio-pika connection
 │   │   ├── qdrant.py           # Qdrant client connection
 │   │   ├── llm.py              # LLM abstraction (OpenAI / Ollama)
-│   │   └── embedding.py        # Embedding client abstraction
+│   │   ├── embedding.py        # Embedding client abstraction
+│   │   └── cache.py            # CAG: BasicCache (LRU) + SemanticCache (Qdrant)
 │   │
 │   ├── ai/                     # ── Nhiệm vụ 1: AI/LLM ──
 │   │   ├── router.py           # Endpoints: /ai/search, /ai/rag/*
@@ -72,6 +77,14 @@ travelmind-ai/
 │   │   ├── prompts.py              # Prompt templates
 │   │   ├── schemas.py
 │   │   └── consumer.py             # RabbitMQ: hotel.created/updated/deleted, review.created/deleted → Qdrant
+│   │
+│   ├── chat/                  # ── Nhiệm vụ 3: AI Chat Agent ──
+│   │   ├── router.py          # POST /ai/chat (SSE streaming)
+│   │   ├── graph.py           # LangGraph ReAct agent + MemorySaver
+│   │   ├── tools.py           # 4 tools: search_hotels, get_hotel_details, check_room_availability, get_popular_hotels
+│   │   ├── service.py         # Stateful (checkpoint) + Stateless (CAG) modes
+│   │   ├── prompts.py         # Agent system prompt
+│   │   └── schemas.py         # ChatRequest, ChatResponse
 │   │
 │   ├── scraping/               # ── Nhiệm vụ 2: Web Scraping ──
 │   │   ├── router.py           # Endpoints: /scraping/extract
@@ -158,6 +171,50 @@ URL → Playwright (render JS, scroll) → raw HTML
 
 ---
 
+## Nhiệm vụ 3: AI Chat Agent (LangGraph)
+
+### Kiến trúc
+
+Chat module dùng **LangGraph ReAct agent** — không phải RAG chatbot thuần text. Agent có access tới 4 tools để truy vấn dữ liệu thực:
+
+| Tool | Mô tả |
+|------|--------|
+| `search_hotels` | Tìm khách sạn bằng ngôn ngữ tự nhiên (Qdrant vector search) |
+| `get_hotel_details` | Lấy chi tiết hotel + rooms + reviews từ PostgreSQL |
+| `check_room_availability` | Kiểm tra phòng trống theo ngày/số khách |
+| `get_popular_hotels` | Top hotels theo rating, filter theo city |
+
+### Hai chế độ hoạt động
+
+**Stateful** (có `conversation_id`):
+- LangGraph load full state từ checkpoint (messages + tool calls + tool results)
+- Chỉ cần gửi message mới — checkpoint có history
+- Không dùng CAG (response phụ thuộc context)
+
+**Stateless** (không `conversation_id`):
+- One-shot, pass tất cả messages
+- Dùng CAG: check cache trước, cache response sau
+
+### CAG (Cache-Augmented Generation)
+
+Giảm chi phí LLM bằng 2 tầng cache:
+
+1. **BasicCache** — In-memory LRU, exact match, O(1) lookup
+2. **SemanticCache** — Qdrant vector similarity (cosine ≥ 0.95), tốn 1 embed call
+
+Flow: BasicCache → (miss) → SemanticCache → (miss) → Agent → cache response
+
+### Checkpointing (MemorySaver)
+
+`MemorySaver` lưu full agent state in-memory, keyed by `thread_id` = `conversation_id`.
+Agent nhớ cả tool calls và tool results giữa các lượt chat.
+
+Ví dụ:
+- Turn 1: "find hotels in Danang" → agent gọi search_hotels → trả 5 kết quả
+- Turn 2: "tell me about the 2nd one" → agent load checkpoint → thấy tool_result → gọi get_hotel_details trực tiếp
+
+---
+
 ## Giao tiếp với NestJS
 
 ### REST — NestJS → AI (đồng bộ — cần response ngay)
@@ -168,8 +225,9 @@ URL → Playwright (render JS, scroll) → raw HTML
 | `POST /ai/similar/{hotel_id}` | Hotels tương tự (vector similarity) |
 | `POST /ai/rag/itinerary` | Generate lịch trình du lịch (RAG) |
 | `POST /scraping/extract` | Scrape 1 URL + extract structured data |
+| `POST /ai/chat` | Chat với AI agent (SSE streaming hoặc JSON) |
 
-### NestJS Backend API (33 endpoints hiện tại)
+### NestJS Backend API (36 endpoints hiện tại)
 
 AI service cần biết các endpoints này khi đọc data hoặc debug:
 
@@ -185,6 +243,7 @@ AI service cần biết các endpoints này khi đọc data hoặc debug:
 | Reviews | `GET, POST /api/reviews`, `DELETE /api/reviews/:id` |
 | Search | `GET /api/search?q=...` (Elasticsearch full-text) |
 | Crawler | `POST /api/crawler/trigger`, `GET /api/crawler/status` |
+| Chat | `GET /api/chat/conversations`, `GET .../conversations/:id`, `DELETE .../conversations/:id`, `WS /chat` |
 
 ### RabbitMQ (bất đồng bộ — fire and forget)
 
