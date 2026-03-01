@@ -124,7 +124,7 @@ async def _invoke_stateful(
     ai_messages = [m for m in result["messages"] if isinstance(m, AIMessage) and m.content]
     if ai_messages:
         return ai_messages[-1].content
-    return "I'm sorry, I couldn't generate a response. Please try again."
+    return "Xin lỗi, tôi không thể tạo phản hồi. Vui lòng thử lại."
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +192,7 @@ async def _invoke_stateless(
     response = (
         ai_messages[-1].content
         if ai_messages
-        else "I'm sorry, I couldn't generate a response. Please try again."
+        else "Xin lỗi, tôi không thể tạo phản hồi. Vui lòng thử lại."
     )
 
     # CAG: write cache

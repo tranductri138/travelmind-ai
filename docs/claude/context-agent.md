@@ -17,10 +17,11 @@ POST /ai/chat
 agent = create_react_agent(
     model=ChatOpenAI(temperature=0.7, max_tokens=2048, streaming=True),
     tools=ALL_TOOLS,           # từ chat/tools.py
-    prompt=system_prompt,      # từ chat/prompts.py
-    checkpointer=MemorySaver(), # in-memory, keyed by thread_id
+    prompt=_build_prompt,      # callable: SystemMessage + trim last N messages
+    checkpointer=AsyncPostgresSaver(pool),  # PostgreSQL, keyed by thread_id
 )
 # singleton — get_agent() / reset_agent()
+# _build_prompt(state) trim messages → chỉ gửi 20 gần nhất cho LLM (CHECKPOINT_MESSAGES_LIMIT)
 ```
 
 ## 4 Tools (`chat/tools.py`)
@@ -36,7 +37,7 @@ agent = create_react_agent(
 
 **Stateful** — khi có `conversation_id`:
 - config: `{"configurable": {"thread_id": conversation_id}}`
-- MemorySaver lưu toàn bộ messages + tool results qua requests
+- AsyncPostgresSaver lưu toàn bộ messages + tool results vào PostgreSQL qua requests
 - Mỗi request đều gọi LLM (không cache)
 
 **Stateless** — không có `conversation_id`:
@@ -96,6 +97,6 @@ Browser (Socket.io) → NestJS Chat Gateway (JWT auth)
 
 **Quan trọng:**
 - NestJS chỉ gửi **1 message mới nhất**, KHÔNG gửi history
-- AI dùng `conversation_id` làm `thread_id` cho MemorySaver → tự khôi phục lịch sử
+- AI dùng `conversation_id` làm `thread_id` cho AsyncPostgresSaver → tự khôi phục lịch sử
 - NestJS quản lý ChatConversation + ChatMessage trong PostgreSQL (CRUD, ownership check)
 - AI chỉ xử lý AI logic (agent, tools, streaming) — không touch database

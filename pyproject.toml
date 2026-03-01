@@ -18,6 +18,7 @@ dependencies = [
     "tiktoken>=0.8",
     "langgraph>=0.2",
     "langchain-openai>=0.3",
+    "langgraph-checkpoint-postgres>=2.0",
 ]
 
 [dependency-groups]

@@ -80,7 +80,7 @@ travelmind-ai/
 │   │
 │   ├── chat/                  # ── Nhiệm vụ 3: AI Chat Agent ──
 │   │   ├── router.py          # POST /ai/chat (SSE streaming)
-│   │   ├── graph.py           # LangGraph ReAct agent + MemorySaver
+│   │   ├── graph.py           # LangGraph ReAct agent + AsyncPostgresSaver
 │   │   ├── tools.py           # 4 tools: search_hotels, get_hotel_details, check_room_availability, get_popular_hotels
 │   │   ├── service.py         # Stateful (checkpoint) + Stateless (CAG) modes
 │   │   ├── prompts.py         # Agent system prompt
@@ -204,10 +204,10 @@ Giảm chi phí LLM bằng 2 tầng cache:
 
 Flow: BasicCache → (miss) → SemanticCache → (miss) → Agent → cache response
 
-### Checkpointing (MemorySaver)
+### Checkpointing (AsyncPostgresSaver)
 
-`MemorySaver` lưu full agent state in-memory, keyed by `thread_id` = `conversation_id`.
-Agent nhớ cả tool calls và tool results giữa các lượt chat.
+`AsyncPostgresSaver` persist full agent state vào PostgreSQL, keyed by `thread_id` = `conversation_id`.
+Agent nhớ cả tool calls và tool results giữa các lượt chat — conversations sống sót qua restart.
 
 Ví dụ:
 - Turn 1: "find hotels in Danang" → agent gọi search_hotels → trả 5 kết quả
@@ -241,7 +241,7 @@ AI service cần biết các endpoints này khi đọc data hoặc debug:
 | Bookings | `GET, POST /api/bookings`, `GET, DELETE /api/bookings/:id`, `PATCH .../cancel` |
 | Payments | `POST /api/payments/intent/:bookingId`, `POST /api/payments/webhook` |
 | Reviews | `GET, POST /api/reviews`, `DELETE /api/reviews/:id` |
-| Search | `GET /api/search?q=...` (Elasticsearch full-text) |
+| Search | `GET /api/search?q=...` (PostgreSQL full-text + AI semantic) |
 | Crawler | `POST /api/crawler/trigger`, `GET /api/crawler/status` |
 | Chat | `GET /api/chat/conversations`, `GET .../conversations/:id`, `DELETE .../conversations/:id`, `WS /chat` |
 
@@ -262,52 +262,8 @@ AI service cần biết các endpoints này khi đọc data hoặc debug:
 
 ## Shared Infrastructure
 
-Dùng chung PostgreSQL và RabbitMQ với NestJS. Thêm **Qdrant** container riêng cho vector storage:
-
-```yaml
-# Thêm vào docker-compose.yml của backend/
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"   # REST API
-      - "6334:6334"   # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-
-  ai-service:
-    build:
-      context: ../ai
-      dockerfile: Dockerfile.dev
-    ports:
-      - "8000:8000"
-    volumes:
-      - ../ai/src:/app/src
-    depends_on:
-      - postgres
-      - rabbitmq
-      - qdrant
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://travelmind:secret@postgres:5432/travelmind
-      - QDRANT_URL=http://qdrant:6333
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_URL=http://ollama:11434
-
-  # Optional: Local LLM cho dev không cần OpenAI key
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
-volumes:
-  qdrant_data:
-  ollama_data:
-```
+Dùng chung PostgreSQL và RabbitMQ với NestJS. Thêm **Qdrant** riêng cho vector storage.
+Infrastructure được quản lý bởi NestJS backend project (`backend/docker-compose.yml`).
 
 **Qdrant Dashboard**: Truy cập `http://localhost:6333/dashboard` để xem collections, points, test search trực tiếp trên UI.
 
@@ -324,8 +280,8 @@ cd ai
 cp .env.example .env
 uv sync
 
-# Start dependencies (cùng NestJS project)
-cd ../backend && docker compose up -d postgres rabbitmq qdrant
+# Start dependencies (từ backend project)
+# cd ../backend && docker compose up -d postgres rabbitmq qdrant
 
 # Dev server
 uv run uvicorn travelmind_ai.main:app --reload --port 8000
@@ -347,10 +303,9 @@ uv run ruff check src/
 ```
 # Monorepo hiện tại
 TRAVELMIND/
-├── backend/      ← NestJS API (port 3000)
+├── backend/      ← NestJS API (port 3000) + docker-compose.yml
 ├── ai/           ← Python AI service (port 8000) — repo này
-├── frontend/     ← React SPA (port 5173)
-└── docker-compose.yml
+└── frontend/     ← React SPA (port 5173)
 
 # Hoặc multi-repo
 github.com/org/travelmind-backend     ← NestJS backend

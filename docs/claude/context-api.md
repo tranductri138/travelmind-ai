@@ -116,6 +116,6 @@ NestJS backend (port 3000) gọi AI service trong 3 trường hợp:
 
 **Search proxy**: NestJS `SearchService` forward request nguyên vẹn, không xử lý gì thêm.
 
-**Chat SSE**: NestJS parse SSE stream, mỗi chunk emit qua WebSocket về browser. Chỉ gửi message mới nhất — AI tự nhớ history qua LangGraph checkpoint.
+**Chat SSE**: NestJS parse SSE stream, mỗi chunk emit qua WebSocket về browser. Chỉ gửi message mới nhất — AI tự nhớ history qua LangGraph checkpoint (PostgreSQL).
 
 **Scraping HTTP**: NestJS `CrawlerService` gọi trực tiếp (không qua RabbitMQ), chờ ~10-30s, tạo Hotel từ kết quả.

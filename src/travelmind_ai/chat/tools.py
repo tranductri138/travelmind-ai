@@ -31,27 +31,27 @@ logger = logging.getLogger(__name__)
 
 def _format_hotel(h: Hotel, include_rooms: bool = False) -> str:
     """Format a Hotel ORM object into a readable string for the LLM."""
-    amenities = ", ".join(h.amenities[:8]) if h.amenities else "N/A"
+    amenities = ", ".join(h.amenities[:8]) if h.amenities else "Không có"
     lines = [
         f"**{h.name}** (ID: {h.id})",
-        f"  City: {h.city}, {h.country} | Stars: {'⭐' * h.stars} ({h.stars})",
-        f"  Rating: {h.rating}/5 ({h.review_count} reviews)",
-        f"  Address: {h.address}",
-        f"  Amenities: {amenities}",
+        f"  Thành phố: {h.city}, {h.country} | Sao: {'⭐' * h.stars} ({h.stars})",
+        f"  Đánh giá: {h.rating}/5 ({h.review_count} đánh giá)",
+        f"  Địa chỉ: {h.address}",
+        f"  Tiện nghi: {amenities}",
     ]
     if h.description:
         desc = h.description[:200] + "..." if len(h.description) > 200 else h.description
-        lines.append(f"  Description: {desc}")
+        lines.append(f"  Mô tả: {desc}")
 
     if include_rooms and h.rooms:
         active_rooms = [r for r in h.rooms if r.is_active]
         if active_rooms:
-            lines.append("  Rooms:")
+            lines.append("  Phòng:")
             for r in active_rooms:
                 r_amenities = ", ".join(r.amenities[:5]) if r.amenities else ""
                 lines.append(
-                    f"    - {r.name} ({r.type}): {r.price} {r.currency}/night, "
-                    f"max {r.max_guests} guests. {r_amenities}"
+                    f"    - {r.name} ({r.type}): {r.price} {r.currency}/đêm, "
+                    f"tối đa {r.max_guests} khách. {r_amenities}"
                 )
     return "\n".join(lines)
 
@@ -84,7 +84,7 @@ async def search_hotels(
         embedding_client = get_embedding_client()
         qdrant_client = get_qdrant_client()
     except (AssertionError, RuntimeError):
-        return "Hotel search is temporarily unavailable (vector database offline)."
+        return "Tìm kiếm khách sạn tạm thời không khả dụng (vector database offline)."
 
     vectors = await embedding_client.embed([query])
 
@@ -115,7 +115,7 @@ async def search_hotels(
             seen[hotel_id] = (hit.score, text)
 
     if not seen:
-        return f"No hotels found matching '{query}'" + (f" in {city}" if city else "") + "."
+        return f"Không tìm thấy khách sạn phù hợp với '{query}'" + (f" tại {city}" if city else "") + "."
 
     # Fetch full hotel details from DB for top results
     top_ids = [hid for hid, _ in sorted(seen.items(), key=lambda x: x[1][0], reverse=True)[:5]]
@@ -127,16 +127,16 @@ async def search_hotels(
         hotels = result.scalars().all()
 
     if not hotels:
-        return f"No active hotels found for query '{query}'."
+        return f"Không tìm thấy khách sạn đang hoạt động cho '{query}'."
 
     # Sort by relevance score
     score_map = {hid: score for hid, (score, _) in seen.items()}
     hotels_sorted = sorted(hotels, key=lambda h: score_map.get(h.id, 0), reverse=True)
 
-    lines = [f"Found {len(hotels_sorted)} hotels matching '{query}':"]
+    lines = [f"Tìm thấy {len(hotels_sorted)} khách sạn phù hợp với '{query}':"]
     for h in hotels_sorted:
         score = score_map.get(h.id, 0)
-        lines.append(f"\n{_format_hotel(h)} (relevance: {score:.2f})")
+        lines.append(f"\n{_format_hotel(h)} (độ phù hợp: {score:.2f})")
 
     return "\n".join(lines)
 
@@ -156,7 +156,7 @@ async def get_hotel_details(hotel_id: str) -> str:
         hotel = result.scalar_one_or_none()
 
         if not hotel:
-            return f"Hotel with ID '{hotel_id}' not found."
+            return f"Không tìm thấy khách sạn với ID '{hotel_id}'."
 
         # Fetch reviews
         review_result = await session.execute(
@@ -170,11 +170,11 @@ async def get_hotel_details(hotel_id: str) -> str:
     lines = [_format_hotel(hotel, include_rooms=True)]
 
     if reviews:
-        lines.append("\n  Recent reviews:")
+        lines.append("\n  Đánh giá gần đây:")
         for r in reviews:
             lines.append(_format_review(r))
     else:
-        lines.append("\n  No reviews yet.")
+        lines.append("\n  Chưa có đánh giá.")
 
     return "\n".join(lines)
 
@@ -199,17 +199,17 @@ async def check_room_availability(
         ci = date.fromisoformat(check_in)
         co = date.fromisoformat(check_out)
     except ValueError:
-        return "Invalid date format. Please use YYYY-MM-DD."
+        return "Định dạng ngày không hợp lệ. Vui lòng dùng YYYY-MM-DD."
 
     if co <= ci:
-        return "Check-out date must be after check-in date."
+        return "Ngày check-out phải sau ngày check-in."
 
     async with async_session_factory() as session:
         # Get hotel
         hotel_result = await session.execute(select(Hotel).where(Hotel.id == hotel_id))
         hotel = hotel_result.scalar_one_or_none()
         if not hotel:
-            return f"Hotel '{hotel_id}' not found."
+            return f"Không tìm thấy khách sạn '{hotel_id}'."
 
         # Get rooms that fit guest count
         room_result = await session.execute(
@@ -222,7 +222,7 @@ async def check_room_availability(
         rooms = room_result.scalars().all()
 
         if not rooms:
-            return f"No rooms at {hotel.name} accommodate {guests} guests."
+            return f"Không có phòng nào tại {hotel.name} phù hợp cho {guests} khách."
 
         # Check availability for each room
         available_rooms = []
@@ -258,18 +258,18 @@ async def check_room_availability(
 
     if not available_rooms:
         return (
-            f"No rooms available at {hotel.name} for {check_in} to {check_out} "
-            f"({guests} guests)."
+            f"Không có phòng trống tại {hotel.name} từ {check_in} đến {check_out} "
+            f"({guests} khách)."
         )
 
     lines = [
-        f"Available rooms at **{hotel.name}** ({check_in} → {check_out}, {guests} guests):"
+        f"Phòng trống tại **{hotel.name}** ({check_in} → {check_out}, {guests} khách):"
     ]
     for room, price, nights in available_rooms:
         total = price * nights
         lines.append(
             f"  - **{room.name}** ({room.type}): ~{price:.0f} {room.currency}/night "
-            f"× {nights} nights = **{total:.0f} {room.currency}** total"
+            f"× {nights} đêm = **{total:.0f} {room.currency}** tổng"
         )
 
     return "\n".join(lines)
@@ -296,9 +296,9 @@ async def get_popular_hotels(city: str | None = None, limit: int = 5) -> str:
         hotels = result.scalars().all()
 
     if not hotels:
-        return f"No hotels found" + (f" in {city}" if city else "") + "."
+        return "Không tìm thấy khách sạn" + (f" tại {city}" if city else "") + "."
 
-    header = f"Top {len(hotels)} hotels" + (f" in {city}" if city else "") + ":"
+    header = f"Top {len(hotels)} khách sạn" + (f" tại {city}" if city else "") + ":"
     lines = [header]
     for i, h in enumerate(hotels, 1):
         lines.append(f"\n{i}. {_format_hotel(h)}")

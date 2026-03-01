@@ -34,6 +34,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("RabbitMQ unavailable — consumers disabled. Start RabbitMQ to enable.")
 
+    # LangGraph checkpoint (PostgreSQL)
+    from travelmind_ai.chat.graph import setup_checkpointer, shutdown_checkpointer
+
+    try:
+        await setup_checkpointer()
+    except Exception:
+        logger.warning("Checkpoint DB unavailable — chat history will not persist across restarts.")
+
     # Qdrant — optional in dev
     try:
         await qdrant.connect()
@@ -57,6 +65,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     # Shutdown
     logger.info("Shutting down TravelMind AI service")
+    await shutdown_checkpointer()
     await shutdown_clients()
     if _rabbitmq_ok:
         await rabbitmq.disconnect()
