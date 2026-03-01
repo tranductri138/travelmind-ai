@@ -4,8 +4,17 @@ FastAPI microservice — semantic search, RAG, LangGraph agent, web scraping, da
 Kết nối NestJS (port 3000) qua REST + RabbitMQ. PostgreSQL là **read-only**.
 
 - **Python** 3.12 | **uv** | **Port** 8000 | Swagger `/docs`
-- **LLM**: OpenAI `gpt-4o-mini` / Ollama | **Embedding**: `text-embedding-3-small` (1536d)
+- **LLM**: 3 providers — OpenAI / Ollama / Alibaba Cloud (Qwen)
 - **Qdrant** 6333 | **RabbitMQ** 5672 | **PostgreSQL** read-only
+- **Checkpoint**: LangGraph agent state → PostgreSQL (3 tables: `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`)
+
+## LLM Provider (switch trong `.env`)
+
+```bash
+LLM_PROVIDER=openai    # OpenAI gpt-4o-mini + text-embedding-3-small
+LLM_PROVIDER=ollama    # Ollama llama3.2 + nomic-embed-text (local, free)
+LLM_PROVIDER=alibaba   # Alibaba Cloud qwen-plus + text-embedding-v3 (DashScope)
+```
 
 ## Commands
 

@@ -77,11 +77,20 @@ def _build_prompt(state: dict) -> list:
 
 
 def _create_llm() -> ChatOpenAI:
-    """Create a ChatOpenAI instance for either OpenAI or Ollama."""
+    """Create a ChatOpenAI instance for OpenAI, Ollama, or Alibaba Cloud (Qwen)."""
     if settings.llm_provider == "openai":
         return ChatOpenAI(
             model=settings.openai_model,
             api_key=settings.openai_api_key,
+            temperature=0.7,
+            max_tokens=2048,
+            streaming=True,
+        )
+    elif settings.llm_provider == "alibaba":
+        return ChatOpenAI(
+            model=settings.alibaba_model,
+            base_url=settings.alibaba_base_url,
+            api_key=settings.alibaba_api_key,
             temperature=0.7,
             max_tokens=2048,
             streaming=True,

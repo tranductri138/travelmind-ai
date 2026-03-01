@@ -11,18 +11,24 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "info"
 
-    # LLM provider
-    llm_provider: Literal["openai", "ollama"] = "openai"
+    # LLM provider: "openai", "ollama", or "alibaba"
+    llm_provider: Literal["openai", "ollama", "alibaba"] = "openai"
 
     # OpenAI
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
 
-    # Ollama
+    # Ollama (local dev)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
     ollama_embedding_model: str = "nomic-embed-text"
+
+    # Alibaba Cloud (DashScope - Qwen)
+    alibaba_api_key: str = ""
+    alibaba_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    alibaba_model: str = "qwen-plus"
+    alibaba_embedding_model: str = "text-embedding-v3"
 
     # Database (read-only, shared with NestJS backend)
     database_url: str = "postgresql+asyncpg://travelmind:secret@localhost:5432/travelmind"

@@ -13,12 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Unified LLM interface supporting OpenAI and Ollama."""
+    """Unified LLM interface supporting OpenAI, Ollama, and Alibaba Cloud (Qwen)."""
 
     def __init__(self) -> None:
         if settings.llm_provider == "openai":
             self._client = AsyncOpenAI(api_key=settings.openai_api_key)
             self._model = settings.openai_model
+        elif settings.llm_provider == "alibaba":
+            self._client = AsyncOpenAI(
+                api_key=settings.alibaba_api_key,
+                base_url=settings.alibaba_base_url,
+            )
+            self._model = settings.alibaba_model
         else:
             self._client = AsyncOpenAI(
                 api_key="ollama",
