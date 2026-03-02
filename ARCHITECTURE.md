@@ -884,6 +884,10 @@ OLLAMA_BASE_URL=http://localhost:11434
 # Dev server (auto-reload khi sửa code)
 uv run uvicorn travelmind_ai.main:app --reload --port 8000
 
+# (DEBUG) Dev server (auto-reload khi sửa code)
+# debug ko tu load toi terminal chay python debug console trong launch vscode truoc expose port 5679
+uv run python -m debugpy --listen 5679 --wait-for-client -m uvicorn travelmind_ai.main:app --port 8000
+
 # Tests (mock, không cần infrastructure)
 uv run pytest -v
 uv run pytest --cov          # kèm coverage
