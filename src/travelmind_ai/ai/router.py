@@ -21,7 +21,12 @@ from travelmind_ai.ai.search_service import find_similar, semantic_search
 from travelmind_ai.core.database import Hotel, Review
 from travelmind_ai.core.embedding import EmbeddingClient
 from travelmind_ai.core.llm import LLMClient
-from travelmind_ai.dependencies import get_db_session, get_embedding_client, get_llm_client, get_qdrant_client
+from travelmind_ai.dependencies import (
+    get_db_session,
+    get_embedding_client,
+    get_llm_client,
+    get_qdrant_client,
+)
 
 logger = logging.getLogger(__name__)
 

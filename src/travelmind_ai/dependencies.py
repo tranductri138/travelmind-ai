@@ -6,12 +6,12 @@ from collections.abc import AsyncGenerator
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from travelmind_ai.config import settings
 from travelmind_ai.core import qdrant, rabbitmq
 from travelmind_ai.core.cache import BasicCache, CacheLayer, SemanticCache
 from travelmind_ai.core.database import async_session_factory
 from travelmind_ai.core.embedding import EmbeddingClient, create_embedding_client
 from travelmind_ai.core.llm import LLMClient
-from travelmind_ai.config import settings
 
 logger = logging.getLogger(__name__)
 

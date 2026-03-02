@@ -1,4 +1,4 @@
-# Context: AI Agent — LangGraph ReAct + CAG
+# Context: AI Agent — LangGraph StateGraph + Intent Routing + CAG
 
 > Load khi làm việc với: chat/, core/cache.py, LangGraph agent, tools, streaming.
 
@@ -11,18 +11,74 @@ POST /ai/chat
 - `stream=true` → SSE `text/event-stream`, yield `{"chunk": "..."}`, kết thúc `[DONE]`
 - `stream=false` → JSON `{"content": "..."}`
 
-## Agent Setup (`chat/graph.py`)
+## StateGraph Architecture (`chat/graph.py`)
+
+Custom StateGraph với intent-based routing — phân loại intent trước, route trực tiếp tới tool phù hợp cho search/popular, giữ ReAct fallback cho complex queries.
+
+```
+START → classify_and_route (rule-based, LLM fallback)
+  ├─ "search"       → handle_search       → respond → END
+  ├─ "popular"      → handle_popular       → respond → END
+  ├─ "details"      ──┐
+  ├─ "availability" ──┼─→ handle_general (inner ReAct agent) → END
+  └─ "general"      ──┘
+```
+
+**Tại sao không dùng `create_react_agent` cho tất cả?**
+- `search` và `popular` dễ extract params bằng regex → gọi tool trực tiếp, skip tool schemas → tiết kiệm tokens
+- `details` và `availability` cần extract hotel_id/dates phức tạp → ReAct xử lý tốt hơn
+- `general` (chitchat, trip planning, multi-tool) → ReAct xử lý
+
+### Agent State
 
 ```python
-agent = create_react_agent(
-    model=ChatOpenAI(temperature=0.7, max_tokens=2048, streaming=True),
-    tools=ALL_TOOLS,           # từ chat/tools.py
-    prompt=_build_prompt,      # callable: SystemMessage + trim last N messages
-    checkpointer=AsyncPostgresSaver(pool),  # PostgreSQL, keyed by thread_id
-)
+class AgentState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    intent: str         # classified intent
+    tool_result: str    # direct tool output (for search/popular)
+```
+
+### Agent Setup
+
+```python
+# chat/graph.py
+graph = StateGraph(AgentState)
+graph.add_node("classify_and_route", partial(classify_and_route, llm=llm))
+graph.add_node("handle_search", handle_search)
+graph.add_node("handle_popular", handle_popular)
+graph.add_node("handle_general", partial(handle_general, llm=llm, prompt_fn=_build_prompt))
+graph.add_node("respond", partial(respond, llm=llm))
+
+agent = graph.compile(checkpointer=AsyncPostgresSaver(pool))
 # singleton — get_agent() / reset_agent()
 # _build_prompt(state) trim messages → chỉ gửi 20 gần nhất cho LLM (CHECKPOINT_MESSAGES_LIMIT)
 ```
+
+## Intent Classification (`chat/intent.py`)
+
+Rule-based first (~80% of queries), LLM fallback for uncertain cases.
+
+| Intent | Trigger | Handler |
+|--------|---------|---------|
+| `search` | "tìm khách sạn", "resort", "homestay", "chỗ ở" | `handle_search` → direct tool call |
+| `popular` | "top", "tốt nhất", "nổi tiếng", "best" | `handle_popular` → direct tool call |
+| `details` | "chi tiết", "thông tin", UUID pattern | `handle_general` → ReAct |
+| `availability` | "phòng trống", "check-in", dates | `handle_general` → ReAct |
+| `general` | Everything else / uncertain | `handle_general` → ReAct |
+
+```python
+classify_intent_rules(message) -> str | None  # None = uncertain → LLM fallback
+```
+
+## Graph Nodes (`chat/nodes.py`)
+
+| Node | Nhiệm vụ |
+|------|-----------|
+| `classify_and_route` | Rule-based → LLM fallback → set `intent` |
+| `handle_search` | Extract query/city/stars → `search_hotels.ainvoke()` → set `tool_result` |
+| `handle_popular` | Extract city → `get_popular_hotels.ainvoke()` → set `tool_result` |
+| `handle_general` | Create inner ReAct agent (no checkpointer) → invoke with messages |
+| `respond` | LLM formats `tool_result` → natural language (Vietnamese, markdown) |
 
 ## 4 Tools (`chat/tools.py`)
 
@@ -43,6 +99,16 @@ agent = create_react_agent(
 **Stateless** — không có `conversation_id`:
 - Không dùng checkpoint — mỗi request độc lập
 - Pipeline: `CacheLayer.get(query)` → hit? return ngay : `agent.ainvoke()` → `CacheLayer.set()`
+
+### Streaming Node Filter
+
+Service chỉ stream chunks từ `respond` và `handle_general` nodes.
+`classify_and_route` LLM output (intent classification) không leak tới user.
+
+```python
+_STREAMABLE_NODES = {"respond", "handle_general"}
+# Filter by: event["metadata"]["langgraph_node"] in _STREAMABLE_NODES
+```
 
 ## CAG (`core/cache.py`)
 

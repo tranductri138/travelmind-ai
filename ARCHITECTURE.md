@@ -56,7 +56,9 @@ src/travelmind_ai/
 │
 ├── chat/                   # ═══ Nhiệm vụ 2: AI Chat Agent ═══
 │   ├── router.py           #   POST /ai/chat — trả SSE stream hoặc JSON
-│   ├── graph.py            #   Tạo LangGraph ReAct agent + quản lý checkpoint PostgreSQL
+│   ├── intent.py           #   Rule-based intent classification (5 intents, regex Vi+En)
+│   ├── nodes.py            #   Graph nodes (classify, search, popular, general, respond)
+│   ├── graph.py            #   Custom StateGraph + checkpointer (intent-based routing)
 │   ├── service.py          #   Điều phối: stateful (checkpoint) vs stateless (CAG)
 │   ├── tools.py            #   4 tools agent có thể gọi (search, details, availability, popular)
 │   ├── prompts.py          #   System prompt cho agent (tiếng Việt, inject ngày hiện tại)
@@ -186,55 +188,54 @@ LangGraph là framework **xây dựng và chạy AI agent**. Nó quyết định
 - Sau khi có kết quả tool, nên gọi thêm tool hay trả lời?
 - Lưu trạng thái hội thoại ở đâu?
 
-**1. `create_react_agent()`** — tạo ReAct agent graph
+**1. Custom `StateGraph`** — intent-based routing thay vì `create_react_agent`
 
 ```python
 # chat/graph.py
-from langgraph.prebuilt import create_react_agent
+from langgraph.graph import StateGraph
 
-agent = create_react_agent(
-    model=llm,              # ChatOpenAI (LangChain)
-    tools=ALL_TOOLS,        # 4 tools với @tool (LangChain)
-    prompt=_build_prompt,   # callable: system prompt + trim last 20 messages
-    checkpointer=checkpointer,  # AsyncPostgresSaver (lưu state)
-)
+class AgentState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    intent: str         # classified intent
+    tool_result: str    # direct tool output
+
+graph = StateGraph(AgentState)
+graph.add_node("classify_and_route", ...)
+graph.add_node("handle_search", ...)      # direct tool call
+graph.add_node("handle_popular", ...)     # direct tool call
+graph.add_node("handle_general", ...)     # inner ReAct agent
+graph.add_node("respond", ...)            # LLM format tool_result
+
+agent = graph.compile(checkpointer=AsyncPostgresSaver(pool))
 ```
 
-`create_react_agent` tạo ra một **graph** (đồ thị) với vòng lặp ReAct:
+StateGraph phân loại intent trước, route trực tiếp tới tool phù hợp:
 
 ```
-                    ┌─────────────────────┐
-                    │   LLM suy nghĩ      │
-         ┌────────►│   (ChatOpenAI)       │◄────────┐
-         │         └──────────┬───────────┘         │
-         │                    │                      │
-         │            Quyết định:                    │
-         │         ┌──────┴──────┐                   │
-         │     Trả lời     Gọi tool                  │
-         │         │            │                    │
-         │         ▼            ▼                    │
-         │    END (trả     Chạy tool              Tool trả
-         │    response)    (search_hotels,        kết quả
-         │                  get_details...)    ────────┘
-         │
-    Load checkpoint                    Save checkpoint
-    (nếu có conversation_id)           (tự động sau mỗi turn)
+START → classify_and_route (rule-based, LLM fallback)
+  ├─ "search"       → handle_search       → respond → END
+  ├─ "popular"      → handle_popular       → respond → END
+  ├─ "details"      ──┐
+  ├─ "availability" ──┼─→ handle_general (inner ReAct) → END
+  └─ "general"      ──┘
 ```
+
+- `search`/`popular`: regex extract params → gọi tool trực tiếp → skip tool schemas → tiết kiệm tokens
+- `details`/`availability`/`general`: cần complex extraction → inner ReAct agent xử lý
 
 **Ví dụ thực tế — Agent xử lý 2 turn:**
 
 ```
 Turn 1: User: "tìm hotel ở Đà Nẵng"
-  → LLM đọc 4 tool schemas → quyết định gọi search_hotels(query="hotel Đà Nẵng")
-  → Tool chạy: embed query → Qdrant search → PostgreSQL fetch → trả "Found 5 hotels..."
-  → LLM đọc kết quả tool → format thành câu trả lời tự nhiên
-  → Checkpoint lưu: [HumanMessage, ToolCall, ToolResult, AIMessage]
+  → classify_and_route: regex match "tìm...khách sạn" → intent="search"
+  → handle_search: extract query + city="Đà Nẵng" → search_hotels.ainvoke() trực tiếp
+  → respond: LLM format tool_result thành câu trả lời tự nhiên
+  → Checkpoint lưu: [HumanMessage, AIMessage]
 
 Turn 2: User: "cho tôi xem chi tiết hotel thứ 2"
-  → Checkpoint load: agent thấy lại toàn bộ turn 1 (kể cả tool results với hotel IDs)
-  → LLM biết "hotel thứ 2" là hotel nào → gọi get_hotel_details(hotel_id="...")
-  → Tool trả chi tiết + rooms + reviews
-  → LLM format response
+  → classify_and_route: regex match "chi tiết" → intent="details"
+  → handle_general: inner ReAct agent load messages → biết "hotel thứ 2" từ context
+  → ReAct gọi get_hotel_details(hotel_id="...") → format response
   → Checkpoint cập nhật thêm turn 2
 ```
 
@@ -327,7 +328,7 @@ async for event in agent.astream_events({"messages": messages}, config=config, v
 Service chỉ lọc `on_chat_model_stream` — những text chunks mà LLM đang generate cho user.
 Tool call chunks bị bỏ qua (user không cần thấy JSON gọi tool).
 
-**Tổng kết: LangGraph = agent loop (ReAct) + checkpointing (PostgreSQL) + streaming events. LangChain cung cấp linh kiện (model, tools, messages), LangGraph điều phối chúng.**
+**Tổng kết: LangGraph = custom StateGraph (intent routing + ReAct fallback) + checkpointing (PostgreSQL) + streaming events. LangChain cung cấp linh kiện (model, tools, messages), LangGraph điều phối chúng.**
 
 ---
 
@@ -515,14 +516,38 @@ Lắng nghe events từ NestJS, tự động cập nhật Qdrant:
 
 ### Tổng Quan
 
-Chat module là phần phức tạp nhất. Gồm 4 file chính:
+Chat module là phần phức tạp nhất. Gồm 6 file chính:
 
 ```
-graph.py    → Tạo agent (LangGraph + checkpointer)
+intent.py   → Rule-based intent classification (5 intents)
+nodes.py    → Graph nodes (classify, handle_search, handle_popular, handle_general, respond)
+graph.py    → Custom StateGraph + checkpointer (thay thế create_react_agent)
 tools.py    → 4 tools agent có thể gọi
-service.py  → Điều phối stateful vs stateless, streaming
+service.py  → Điều phối stateful vs stateless, streaming (filter by node name)
 router.py   → FastAPI endpoint, SSE format
 ```
+
+### StateGraph Architecture
+
+Custom StateGraph với intent-based routing — phân loại intent trước, route trực tiếp
+tới tool phù hợp cho search/popular, giữ ReAct fallback cho complex queries:
+
+```
+START → classify_and_route (rule-based, LLM fallback)
+  ├─ "search"       → handle_search       → respond → END
+  ├─ "popular"      → handle_popular       → respond → END
+  ├─ "details"      ──┐
+  ├─ "availability" ──┼─→ handle_general (inner ReAct agent) → END
+  └─ "general"      ──┘
+```
+
+**Tại sao?**
+- `search` và `popular`: extract params bằng regex → gọi tool trực tiếp → skip tool schemas → tiết kiệm tokens
+- `details` và `availability`: cần extract hotel_id (UUID) và dates → ReAct xử lý tốt hơn
+- `general` (chitchat, trip planning, multi-tool) → ReAct xử lý
+
+**Intent classification** (`intent.py`): Rule-based ~80% queries (regex Vietnamese + English).
+LLM fallback cho ambiguous cases. 5 intents: search, popular, details, availability, general.
 
 ### 4 Tools (`chat/tools.py`)
 

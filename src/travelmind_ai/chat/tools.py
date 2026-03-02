@@ -7,7 +7,7 @@ a formatted string that the LLM can use to compose its answer.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date
 
 from langchain_core.tools import tool
 from sqlalchemy import select

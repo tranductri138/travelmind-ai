@@ -12,7 +12,7 @@ Kết nối NestJS qua REST + RabbitMQ. PostgreSQL là **read-only** (do NestJS/
 - Python 3.12, FastAPI, uv
 - LLM: OpenAI `gpt-4o-mini` / Ollama `llama3.2` — switch qua `LLM_PROVIDER` env
 - Embedding: `text-embedding-3-small` (dim=1536)
-- Agent: LangGraph `create_react_agent` + LangChain
+- Agent: LangGraph custom `StateGraph` (intent routing) + ReAct fallback + LangChain
 - Qdrant (6333): vector DB — collections: `hotels`, `reviews`, `bookings`, `response_cache`
 - RabbitMQ (5672): exchange `travelmind` (topic)
 - PostgreSQL: asyncpg, read-only
@@ -27,7 +27,9 @@ src/travelmind_ai/
 ├── core/cache.py    # CAG: BasicCache + SemanticCache → CacheLayer
 ├── ai/              # semantic search + RAG (POST /ai/search, /similar, /rag/itinerary)
 ├── booking/         # booking embed + analytics events
-├── chat/            # LangGraph agent (POST /ai/chat)
+├── chat/            # LangGraph StateGraph agent (POST /ai/chat)
+│   ├── intent.py    # Rule-based intent classification (search/popular/details/availability/general)
+│   ├── nodes.py     # Graph nodes (classify_and_route, handle_search, handle_popular, etc.)
 ├── scraping/        # Playwright + LLM extract (POST /scraping/extract)
 └── shared/          # middleware, exceptions, text_utils
 tests/               # pytest-asyncio, tất cả mock

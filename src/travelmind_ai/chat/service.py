@@ -26,6 +26,10 @@ from travelmind_ai.dependencies import get_cache_layer
 
 logger = logging.getLogger(__name__)
 
+# Nodes whose LLM output should be streamed to the user.
+# classify_and_route LLM output is internal (intent classification) — not for user.
+_STREAMABLE_NODES = {"respond", "handle_general"}
+
 
 def _to_langchain_messages(
     messages: list[dict[str, str]],
@@ -105,6 +109,9 @@ async def _stream_stateful(
         version="v2",
     ):
         if event["event"] == "on_chat_model_stream":
+            node = event.get("metadata", {}).get("langgraph_node", "")
+            if node not in _STREAMABLE_NODES:
+                continue
             chunk = event["data"]["chunk"]
             if chunk.content and not getattr(chunk, "tool_call_chunks", None):
                 yield chunk.content
@@ -158,6 +165,9 @@ async def _stream_stateless(
         version="v2",
     ):
         if event["event"] == "on_chat_model_stream":
+            node = event.get("metadata", {}).get("langgraph_node", "")
+            if node not in _STREAMABLE_NODES:
+                continue
             chunk = event["data"]["chunk"]
             if chunk.content and not getattr(chunk, "tool_call_chunks", None):
                 full_response += chunk.content
