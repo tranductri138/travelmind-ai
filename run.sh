@@ -9,46 +9,14 @@ DB_URL=$(grep -E '^DATABASE_URL=' .env | cut -d'=' -f2-)
 # Convert asyncpg URL to psql-compatible URL
 PSQL_URL=$(echo "$DB_URL" | sed 's/+asyncpg//')
 
-# Create checkpoint tables if not exist
-echo "Setting up checkpoint tables..."
+# Drop old checkpoint tables (wrong schema) and let app recreate with correct types
+echo "Resetting checkpoint tables (app will auto-create on startup)..."
 docker run --rm --network "$NETWORK" postgres:16-alpine psql "$PSQL_URL" -c "
-CREATE TABLE IF NOT EXISTS checkpoints (
-    thread_id TEXT NOT NULL,
-    checkpoint_ns TEXT NOT NULL DEFAULT '',
-    checkpoint_id TEXT NOT NULL,
-    parent_checkpoint_id TEXT,
-    type TEXT,
-    checkpoint BYTEA NOT NULL,
-    metadata BYTEA NOT NULL DEFAULT '{}',
-    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
-);
-
-CREATE TABLE IF NOT EXISTS checkpoint_blobs (
-    thread_id TEXT NOT NULL,
-    checkpoint_ns TEXT NOT NULL DEFAULT '',
-    channel TEXT NOT NULL,
-    version TEXT NOT NULL,
-    type TEXT NOT NULL,
-    blob BYTEA,
-    PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
-);
-
-CREATE TABLE IF NOT EXISTS checkpoint_writes (
-    thread_id TEXT NOT NULL,
-    checkpoint_ns TEXT NOT NULL DEFAULT '',
-    checkpoint_id TEXT NOT NULL,
-    task_id TEXT NOT NULL,
-    idx INTEGER NOT NULL,
-    channel TEXT NOT NULL,
-    type TEXT,
-    blob BYTEA NOT NULL,
-    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
-);
+DROP TABLE IF EXISTS checkpoint_writes;
+DROP TABLE IF EXISTS checkpoint_blobs;
+DROP TABLE IF EXISTS checkpoints;
+DROP TABLE IF EXISTS checkpoint_migrations;
 "
-
-if [ $? -ne 0 ]; then
-  echo "Warning: Failed to create checkpoint tables. Container may fail to start."
-fi
 
 # Build image
 echo "Building $IMAGE_NAME..."
