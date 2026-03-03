@@ -17,7 +17,8 @@
       "Bash(PGPASSWORD=secret psql:*)",
       "Bash(docker ps:*)",
       "Bash(docker exec:*)",
-      "Bash(uv pip:*)"
+      "Bash(uv pip:*)",
+      "Bash(chmod +x:*)"
     ]
   }
 }
