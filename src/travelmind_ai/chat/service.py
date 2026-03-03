@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 
 # Nodes whose LLM output should be streamed to the user.
 # classify_and_route LLM output is internal (intent classification) — not for user.
-_STREAMABLE_NODES = {"respond", "handle_general"}
+# "respond" → search/popular intent path (outer graph formats tool_result)
+# "agent"  → general intent path (inner ReAct agent inside handle_general)
+_STREAMABLE_NODES = {"respond", "agent"}
 
 
 def _to_langchain_messages(
@@ -110,9 +112,9 @@ async def _stream_stateful(
     ):
         if event["event"] == "on_chat_model_stream":
             node = event.get("metadata", {}).get("langgraph_node", "")
+            chunk = event["data"]["chunk"]
             if node not in _STREAMABLE_NODES:
                 continue
-            chunk = event["data"]["chunk"]
             if chunk.content and not getattr(chunk, "tool_call_chunks", None):
                 yield chunk.content
 

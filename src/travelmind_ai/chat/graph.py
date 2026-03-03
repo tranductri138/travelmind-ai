@@ -21,6 +21,7 @@ import functools
 import logging
 from typing import Annotated
 
+import psycopg
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -73,7 +74,13 @@ async def setup_checkpointer() -> None:
     _pool = AsyncConnectionPool(conninfo=settings.checkpoint_database_url)
     await _pool.open()
     _checkpointer = AsyncPostgresSaver(_pool)
-    await _checkpointer.setup()
+    # setup() uses CREATE INDEX CONCURRENTLY which cannot run inside a transaction.
+    # Use a dedicated autocommit connection for the migration DDL.
+    async with await psycopg.AsyncConnection.connect(
+        settings.checkpoint_database_url, autocommit=True
+    ) as conn:
+        _tmp = AsyncPostgresSaver(conn)
+        await _tmp.setup()
     logger.info("LangGraph checkpointer ready (AsyncPostgresSaver → PostgreSQL)")
 
 

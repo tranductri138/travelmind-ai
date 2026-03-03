@@ -245,10 +245,16 @@ Turn 2: User: "cho tôi xem chi tiết hotel thứ 2"
 # chat/graph.py
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
+import psycopg
 
 pool = AsyncConnectionPool(conninfo="postgresql://...")
 checkpointer = AsyncPostgresSaver(pool)
-await checkpointer.setup()  # Tạo 4 tables + indexes (xem bên dưới)
+
+# ⚠️ QUAN TRỌNG: setup() dùng CREATE INDEX CONCURRENTLY — không chạy được trong transaction.
+# Phải dùng connection riêng với autocommit=True để chạy migrations:
+async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+    tmp = AsyncPostgresSaver(conn)
+    await tmp.setup()  # Tạo 4 tables + indexes
 ```
 
 Checkpoint lưu **toàn bộ state** của agent:
@@ -262,44 +268,27 @@ Keyed by `thread_id` = `conversation_id`. Khi restart server, conversations vẫ
 
 | Table | Vai trò | Primary Key |
 |-------|---------|-------------|
-| `checkpoints` | Snapshot agent state (messages, metadata) | `(thread_id, checkpoint_ns, checkpoint_id)` |
+| `checkpoints` | Snapshot agent state (messages, **metadata**) | `(thread_id, checkpoint_ns, checkpoint_id)` |
 | `checkpoint_blobs` | Binary data lớn (serialized state) | `(thread_id, checkpoint_ns, channel, version)` |
 | `checkpoint_writes` | Pending writes chưa commit vào checkpoint | `(thread_id, checkpoint_ns, checkpoint_id, task_id, idx)` |
-| `checkpoint_migrations` | Track migration version | `(v)` |
+| `checkpoint_migrations` | Track migration version — `setup()` dùng để skip migrations đã chạy | `(v)` |
 
-**Lưu ý quan trọng — Tạo tables lần đầu:**
+> **Column name**: Library dùng `metadata` (KHÔNG phải `metadata_`). Nếu tạo thủ công phải đúng tên.
 
-`AsyncPostgresSaver.setup()` chạy migrations bao gồm `CREATE INDEX CONCURRENTLY` — lệnh này
-**không thể chạy trong transaction block**. Nếu `setup()` thất bại (log: `Checkpoint DB unavailable`),
-cần tạo tables thủ công bằng cách chạy script với `autocommit=True`:
+**Cách hoạt động khi startup (`setup_checkpointer()` trong `graph.py`):**
 
-```python
-# Script tạo checkpoint tables thủ công
-import asyncio
-from psycopg import AsyncConnection
-from psycopg_pool import AsyncConnectionPool
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-async def main():
-    conn = await AsyncConnection.connect(
-        "postgresql://travelmind:secret@localhost:5432/travelmind", autocommit=True
-    )
-    pool = AsyncConnectionPool(conninfo="postgresql://travelmind:secret@localhost:5432/travelmind")
-    await pool.open()
-    cp = AsyncPostgresSaver(pool)
-    for migration in cp.MIGRATIONS:
-        try:
-            await conn.execute(migration)
-        except Exception:
-            pass  # Skip nếu đã tồn tại
-    await conn.close()
-    await pool.close()
-    print("Checkpoint tables created!")
-
-asyncio.run(main())
+```
+1. Tạo AsyncConnectionPool (dùng cho runtime queries)
+2. Mở connection riêng với autocommit=True
+3. Chạy AsyncPostgresSaver.setup() trên connection đó
+   → setup() check checkpoint_migrations table
+   → Chỉ chạy migrations chưa có (idempotent)
+   → CREATE INDEX CONCURRENTLY chạy OK nhờ autocommit
+4. Đóng connection riêng, giữ pool cho runtime
 ```
 
-Hoặc đơn giản hơn, chạy SQL trực tiếp trong PostgreSQL container (xem Section 17 — Trace Lỗi).
+Nếu PostgreSQL không available lúc startup, `main.py` catch exception và log warning —
+server vẫn chạy nhưng chat sẽ lỗi khi dùng.
 
 **Message trimming** — tránh lag khi conversation dài:
 
@@ -317,16 +306,33 @@ LLM nhận:  SystemMessage + 20 messages gần nhất
 
 ```python
 # chat/service.py
+# ⚠️ QUAN TRỌNG: filter theo langgraph_node — phải khớp tên node thực tế
+_STREAMABLE_NODES = {"respond", "agent"}
+#                     │          └─ inner ReAct agent node (handle_general path)
+#                     └─ outer graph respond node (search/popular path)
+
 async for event in agent.astream_events({"messages": messages}, config=config, version="v2"):
     if event["event"] == "on_chat_model_stream":
+        node = event.get("metadata", {}).get("langgraph_node", "")
+        if node not in _STREAMABLE_NODES:
+            continue  # skip classify_and_route LLM output (internal)
         chunk = event["data"]["chunk"]
-        if chunk.content and not chunk.tool_call_chunks:  # bỏ qua tool call chunks
-            yield chunk.content  # chỉ yield text chunks cho user
+        if chunk.content and not chunk.tool_call_chunks:
+            yield chunk.content
 ```
 
 `astream_events` emit nhiều loại events (tool start, tool end, LLM stream...).
-Service chỉ lọc `on_chat_model_stream` — những text chunks mà LLM đang generate cho user.
-Tool call chunks bị bỏ qua (user không cần thấy JSON gọi tool).
+Service lọc `on_chat_model_stream` + **node name** để chỉ yield text chunks cho user:
+
+| Intent path | Node emit LLM stream | `langgraph_node` value |
+|------------|---------------------|----------------------|
+| search/popular | `respond` (outer graph) | `"respond"` |
+| details/availability/general | inner ReAct agent | `"agent"` |
+| classify_and_route | LLM fallback (internal) | `"classify_and_route"` — **filtered out** |
+
+> **Lưu ý**: `handle_general` gọi `create_react_agent` bên trong. LLM streaming events
+> từ inner agent có `langgraph_node: "agent"` (tên node bên trong ReAct graph),
+> **KHÔNG phải** `"handle_general"`. Nếu filter sai node name → stream trả về empty.
 
 **Tổng kết: LangGraph = custom StateGraph (intent routing + ReAct fallback) + checkpointing (PostgreSQL) + streaming events. LangChain cung cấp linh kiện (model, tools, messages), LangGraph điều phối chúng.**
 
@@ -958,48 +964,93 @@ cd ../backend && docker compose logs qdrant
 | `asyncpg` connection error | PostgreSQL sai URL | Kiểm tra `DATABASE_URL` |
 | Agent không gọi tool | System prompt sai | Kiểm tra `chat/prompts.py` |
 | Chat không nhớ lịch sử | Không gửi `conversation_id` | Đảm bảo NestJS gửi cùng conversation_id |
+| Chat streaming trả empty (chỉ `[DONE]`) | `_STREAMABLE_NODES` filter sai node name | Xem **Lỗi Streaming Empty** bên dưới |
 
 ### Lỗi Checkpoint (LangGraph)
 
-**Triệu chứng**: Chat trả 500, log hiện `UndefinedTable: relation "checkpoints" does not exist`
+Code hiện tại (`graph.py`) đã dùng `autocommit=True` connection riêng cho `setup()`,
+nên checkpoint tables tự tạo khi startup. Tuy nhiên nếu vẫn gặp lỗi:
 
-**Nguyên nhân**: `AsyncPostgresSaver.setup()` thất bại vì `CREATE INDEX CONCURRENTLY` không chạy được
-trong transaction block. Tables checkpoint chưa được tạo.
+**Lỗi 1: `UndefinedTable: relation "checkpoints" does not exist`**
 
-**Cách fix — Tạo tables thủ công bằng SQL:**
+Checkpoint tables chưa tồn tại. Thường do PostgreSQL chưa chạy lúc startup.
 
-```bash
-# Chạy trong PostgreSQL container
-docker exec $(docker ps --filter "name=postgres" -q | head -1) psql -U travelmind -d travelmind -c "
-CREATE TABLE IF NOT EXISTS checkpoint_migrations (v INTEGER PRIMARY KEY);
-CREATE TABLE IF NOT EXISTS checkpoints (
-    thread_id TEXT NOT NULL, checkpoint_ns TEXT NOT NULL DEFAULT '',
-    checkpoint_id TEXT NOT NULL, parent_checkpoint_id TEXT,
-    type TEXT, checkpoint JSONB NOT NULL, metadata JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
-);
-CREATE TABLE IF NOT EXISTS checkpoint_blobs (
-    thread_id TEXT NOT NULL, checkpoint_ns TEXT NOT NULL DEFAULT '',
-    channel TEXT NOT NULL, version TEXT NOT NULL, type TEXT NOT NULL, blob BYTEA,
-    PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
-);
-CREATE TABLE IF NOT EXISTS checkpoint_writes (
-    thread_id TEXT NOT NULL, checkpoint_ns TEXT NOT NULL DEFAULT '',
-    checkpoint_id TEXT NOT NULL, task_id TEXT NOT NULL, idx INTEGER NOT NULL,
-    channel TEXT NOT NULL, type TEXT, blob BYTEA NOT NULL, task_path TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
-);
-"
-```
+**Lỗi 2: `UndefinedColumn: column "metadata" does not exist` (HINT: Perhaps you meant "metadata_")**
 
-Sau đó restart AI service. Hoặc dùng Python script (xem Section 4.2).
+Tables tạo thủ công với sai column name. Library dùng `metadata` (KHÔNG phải `metadata_`).
+**Fix**: Drop và tạo lại đúng schema.
 
-**Kiểm tra tables đã tồn tại:**
+**Lỗi 3: `CREATE INDEX CONCURRENTLY cannot run inside a transaction block`**
+
+`setup()` chạy trên connection có autocommit=False (mặc định của connection pool).
+**Fix**: Code hiện tại đã xử lý — dùng connection riêng với `autocommit=True`.
+
+**Kiểm tra tables:**
 
 ```bash
 docker exec $(docker ps --filter "name=postgres" -q | head -1) \
   psql -U travelmind -d travelmind -c "\dt checkpoint*"
+# Phải thấy 4 tables: checkpoint_migrations, checkpoints, checkpoint_blobs, checkpoint_writes
+```
+
+**Verify schema đúng:**
+
+```bash
+docker exec $(docker ps --filter "name=postgres" -q | head -1) \
+  psql -U travelmind -d travelmind -c "\d checkpoints"
+# Column phải là "metadata" (KHÔNG phải "metadata_")
+```
+
+**Fix nhanh — Drop và tạo lại (mất hết chat history):**
+
+```bash
+# Cách 1: Python script (dùng đúng migrations từ library)
+uv run python -c "
+import asyncio, psycopg
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+async def fix():
+    conn = await psycopg.AsyncConnection.connect(
+        'postgresql://travelmind:secret@localhost:5432/travelmind', autocommit=True)
+    cur = conn.cursor()
+    await cur.execute('DROP TABLE IF EXISTS checkpoint_writes, checkpoint_blobs, checkpoints, checkpoint_migrations')
+    for m in AsyncPostgresSaver.MIGRATIONS:
+        await cur.execute(m)
+    await conn.close()
+    print('OK')
+asyncio.run(fix())
+"
+
+# Cách 2: Restart AI service (setup_checkpointer tự tạo nếu chưa có)
+# Chỉ cần PostgreSQL đang chạy
+```
+
+### Lỗi Streaming Empty
+
+**Triệu chứng**: Chat SSE stream chỉ trả `data: [DONE]` mà không có data chunks.
+Non-streaming (`stream: false`) vẫn trả response bình thường.
+
+**Nguyên nhân**: `_STREAMABLE_NODES` trong `service.py` filter sai node name.
+
+Streaming filter lọc events theo `langgraph_node` trong metadata. Node name phải khớp
+chính xác với tên node trong graph:
+
+| Intent path | LLM gọi ở đâu | `langgraph_node` | Phải có trong `_STREAMABLE_NODES` |
+|------------|---------------|-------------------|----------------------------------|
+| search/popular | `respond` node (outer graph) | `"respond"` | Yes |
+| general/details/availability | inner ReAct agent | `"agent"` | Yes |
+| classify_and_route | LLM fallback | `"classify_and_route"` | No (internal) |
+
+**Lưu ý quan trọng**: `handle_general` gọi `create_react_agent()` bên trong.
+LLM streaming events từ inner agent có `langgraph_node: "agent"` (tên node bên trong
+ReAct graph), **KHÔNG phải** `"handle_general"`.
+
+**Fix**: Đảm bảo `_STREAMABLE_NODES = {"respond", "agent"}` trong `service.py`.
+
+**Debug**: Thêm log tạm vào `_stream_stateful()` để xem events đang emit:
+```python
+if event["event"] == "on_chat_model_stream":
+    node = event.get("metadata", {}).get("langgraph_node", "")
+    logger.info("STREAM: node=%s content=%r", node, event["data"]["chunk"].content[:50])
 ```
 
 ### Lỗi LLM
