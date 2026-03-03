@@ -2,6 +2,7 @@
 
 IMAGE_NAME="travelmind-ai"
 CONTAINER_NAME="travelmind-ai"
+NETWORK="backend_default"
 
 # Build image
 echo "Building $IMAGE_NAME..."
@@ -20,7 +21,7 @@ echo "Running $CONTAINER_NAME..."
 docker run -d \
   --name "$CONTAINER_NAME" \
   --env-file .env \
-  -p 8000:8000 \
+  --network "$NETWORK" \
   "$IMAGE_NAME"
 
 echo "Container started: http://localhost:8000"
