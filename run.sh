@@ -2,7 +2,7 @@
 
 IMAGE_NAME="travelmind-ai"
 CONTAINER_NAME="travelmind-ai"
-NETWORK="backend_default"
+NETWORK="travelmind"
 
 # Build image
 echo "Building $IMAGE_NAME..."
