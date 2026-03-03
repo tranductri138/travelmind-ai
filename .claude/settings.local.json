@@ -13,7 +13,11 @@
       "Bash(ls:*)",
       "Skill(git:commit)",
       "Bash(python3:*)",
-      "Bash(.:*)"
+      "Bash(.:*)",
+      "Bash(PGPASSWORD=secret psql:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(uv pip:*)"
     ]
   }
 }
