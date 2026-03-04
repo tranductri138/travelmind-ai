@@ -12,6 +12,7 @@ __pycache__/
 .ruff_cache/
 htmlcov/
 .coverage
+run.sh
 
 # IDE, OS
 .idea/
