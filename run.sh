@@ -47,6 +47,7 @@ docker run -d \
   --name "$CONTAINER_NAME" \
   --env-file .env \
   --network "$NETWORK" \
+  -p 8000:8000 \
   "$IMAGE_NAME"
 
 echo "Container started: http://localhost:8000"
