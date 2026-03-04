@@ -7,6 +7,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from travelmind_ai.ai.embedding_service import embed_hotel, embed_review
 from travelmind_ai.ai.rag_service import generate_itinerary
@@ -19,10 +20,11 @@ from travelmind_ai.ai.schemas import (
     SimilarRequest,
 )
 from travelmind_ai.ai.search_service import find_similar, semantic_search
-from travelmind_ai.core.database import Hotel, Review
+from travelmind_ai.booking.service import embed_booking
+from travelmind_ai.config import settings
+from travelmind_ai.core.database import Booking, Hotel, Review, Room
 from travelmind_ai.core.embedding import EmbeddingClient
 from travelmind_ai.core.llm import LLMClient
-from travelmind_ai.config import settings
 from travelmind_ai.dependencies import (
     get_db_session,
     get_embedding_client,
@@ -124,7 +126,10 @@ async def reset_collections(
 @router.post(
     "/sync",
     summary="Sync PostgreSQL data to Qdrant",
-    description="Read all hotels and reviews from PostgreSQL and embed them into Qdrant.",
+    description=(
+        "Read all hotels, reviews, and bookings from PostgreSQL "
+        "and embed them into Qdrant."
+    ),
 )
 async def sync_to_qdrant(
     db: AsyncSession = Depends(get_db_session),
@@ -176,9 +181,42 @@ async def sync_to_qdrant(
         except Exception as e:
             logger.error("Failed to embed review %s: %s", review.id, e)
 
+    # Sync bookings (join room → hotel for hotel info)
+    result = await db.execute(
+        select(Booking).options(selectinload(Booking.room).selectinload(Room.hotel))
+    )
+    bookings = result.scalars().all()
+    booking_count = 0
+    for booking in bookings:
+        try:
+            hotel = booking.room.hotel if booking.room else None
+            await embed_booking(
+                {
+                    "id": booking.id,
+                    "user_id": booking.user_id,
+                    "room_id": booking.room_id,
+                    "check_in": str(booking.check_in),
+                    "check_out": str(booking.check_out),
+                    "guests": booking.guests,
+                    "total_price": booking.total_price,
+                    "currency": booking.currency,
+                    "status": booking.status,
+                    "hotel_name": hotel.name if hotel else None,
+                    "hotel_city": hotel.city if hotel else None,
+                    "hotel_country": hotel.country if hotel else None,
+                },
+                embedding_client,
+                qdrant_client,
+            )
+            booking_count += 1
+        except Exception as e:
+            logger.error("Failed to embed booking %s: %s", booking.id, e)
+
     return {
         "synced_hotels": hotel_count,
         "synced_reviews": review_count,
+        "synced_bookings": booking_count,
         "total_hotels": len(hotels),
         "total_reviews": len(reviews),
+        "total_bookings": len(bookings),
     }
