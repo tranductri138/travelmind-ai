@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.models import Distance, VectorParams
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from travelmind_ai.ai.search_service import find_similar, semantic_search
 from travelmind_ai.core.database import Hotel, Review
 from travelmind_ai.core.embedding import EmbeddingClient
 from travelmind_ai.core.llm import LLMClient
+from travelmind_ai.config import settings
 from travelmind_ai.dependencies import (
     get_db_session,
     get_embedding_client,
@@ -85,6 +87,38 @@ async def rag_itinerary(
     qdrant_client: AsyncQdrantClient = Depends(get_qdrant_client),
 ) -> RAGItineraryResponse:
     return await generate_itinerary(request, llm_client, embedding_client, qdrant_client)
+
+
+@router.post(
+    "/reset-collections",
+    summary="Reset Qdrant collections",
+    description="Drop and recreate all Qdrant collections with current embedding dimension. Use after switching LLM provider.",
+)
+async def reset_collections(
+    qdrant_client: AsyncQdrantClient = Depends(get_qdrant_client),
+) -> dict:
+    collections = [
+        settings.qdrant_collection_hotels,
+        settings.qdrant_collection_reviews,
+        settings.qdrant_collection_bookings,
+        settings.qdrant_collection_cache,
+    ]
+    for name in collections:
+        if await qdrant_client.collection_exists(name):
+            await qdrant_client.delete_collection(name)
+        await qdrant_client.create_collection(
+            collection_name=name,
+            vectors_config=VectorParams(
+                size=settings.embedding_dimension,
+                distance=Distance.COSINE,
+            ),
+        )
+        logger.info("Recreated collection: %s (dim=%d)", name, settings.embedding_dimension)
+    return {
+        "status": "ok",
+        "dimension": settings.embedding_dimension,
+        "collections": collections,
+    }
 
 
 @router.post(
