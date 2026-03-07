@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import logging
 from typing import Protocol
 
 from openai import AsyncOpenAI
 
 from travelmind_ai.config import settings
 from travelmind_ai.core.llm import OllamaEmbeddingClient
-
-logger = logging.getLogger(__name__)
 
 
 class EmbeddingClient(Protocol):

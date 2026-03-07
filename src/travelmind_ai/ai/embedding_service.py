@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import logging
-
+from loguru import logger
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from travelmind_ai.config import settings
 from travelmind_ai.core.embedding import EmbeddingClient
 from travelmind_ai.shared.text_utils import build_hotel_text, chunk_text
-
-logger = logging.getLogger(__name__)
 
 
 async def embed_hotel(

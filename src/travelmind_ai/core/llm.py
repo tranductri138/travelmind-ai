@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -8,8 +7,6 @@ import httpx
 from openai import AsyncOpenAI
 
 from travelmind_ai.config import settings
-
-logger = logging.getLogger(__name__)
 
 
 class LLMClient:

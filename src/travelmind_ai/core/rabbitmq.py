@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
 import aio_pika
+from loguru import logger
 
 from travelmind_ai.config import settings
-
-logger = logging.getLogger(__name__)
 
 _connection: aio_pika.abc.AbstractRobustConnection | None = None
 _channel: aio_pika.abc.AbstractChannel | None = None

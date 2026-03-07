@@ -6,7 +6,6 @@ a formatted string that the LLM can use to compose its answer.
 
 from __future__ import annotations
 
-import logging
 from datetime import date
 
 from langchain_core.tools import tool
@@ -21,9 +20,6 @@ from travelmind_ai.core.database import (
     async_session_factory,
 )
 from travelmind_ai.dependencies import get_embedding_client, get_qdrant_client
-
-logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends
+from loguru import logger
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams
 from sqlalchemy import select
@@ -31,8 +30,6 @@ from travelmind_ai.dependencies import (
     get_llm_client,
     get_qdrant_client,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 

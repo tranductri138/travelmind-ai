@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import logging
-
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, Range
 
 from travelmind_ai.ai.schemas import HotelScore, SearchRequest, SearchResponse
 from travelmind_ai.config import settings
 from travelmind_ai.core.embedding import EmbeddingClient
-
-logger = logging.getLogger(__name__)
 
 
 async def semantic_search(

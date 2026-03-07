@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-import logging
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+from loguru import logger
 
 from travelmind_ai.chat.schemas import ChatRequest, ChatResponse
 from travelmind_ai.chat.service import agent_chat, agent_chat_stream
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["Chat"])
 

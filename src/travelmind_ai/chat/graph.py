@@ -18,7 +18,6 @@ survive service restarts.
 from __future__ import annotations
 
 import functools
-import logging
 from typing import Annotated
 
 import psycopg
@@ -27,6 +26,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from loguru import logger
 from psycopg_pool import AsyncConnectionPool
 from typing_extensions import TypedDict
 
@@ -39,8 +39,6 @@ from travelmind_ai.chat.nodes import (
 )
 from travelmind_ai.chat.prompts import build_system_prompt
 from travelmind_ai.config import settings
-
-logger = logging.getLogger(__name__)
 
 # Singletons
 _agent = None

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 
 from travelmind_ai.config import settings
 from travelmind_ai.core.llm import LLMClient
@@ -11,7 +11,6 @@ from travelmind_ai.dependencies import get_llm_client
 from travelmind_ai.scraping.schemas import ScrapeRequest, ScrapeResponse
 from travelmind_ai.scraping.scraping_service import scrape_hotel
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scraping", tags=["Scraping"])
 
 # In-memory tracker for demo mode (resets daily)

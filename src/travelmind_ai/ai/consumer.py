@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
+
+from loguru import logger
 
 from travelmind_ai.ai.embedding_service import (
     delete_hotel_embeddings,
@@ -12,8 +13,6 @@ from travelmind_ai.ai.embedding_service import (
 from travelmind_ai.core import rabbitmq
 from travelmind_ai.core.qdrant import get_client as get_qdrant
 from travelmind_ai.dependencies import get_embedding_client
-
-logger = logging.getLogger(__name__)
 
 
 async def _on_hotel_event(data: dict[str, Any]) -> None:

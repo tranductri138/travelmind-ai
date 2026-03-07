@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from qdrant_client import AsyncQdrantClient
 
 from travelmind_ai.ai.prompts import RAG_ITINERARY_SYSTEM, RAG_ITINERARY_USER
@@ -9,8 +7,6 @@ from travelmind_ai.ai.schemas import HotelScore, RAGItineraryRequest, RAGItinera
 from travelmind_ai.config import settings
 from travelmind_ai.core.embedding import EmbeddingClient
 from travelmind_ai.core.llm import LLMClient
-
-logger = logging.getLogger(__name__)
 
 
 async def generate_itinerary(

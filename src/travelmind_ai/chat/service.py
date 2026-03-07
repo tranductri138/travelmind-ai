@@ -15,16 +15,14 @@ Two modes based on whether conversation_id is provided:
 
 from __future__ import annotations
 
-import logging
 import uuid
 from collections.abc import AsyncGenerator
 
 from langchain_core.messages import AIMessage, HumanMessage
+from loguru import logger
 
 from travelmind_ai.chat.graph import get_agent
 from travelmind_ai.dependencies import get_cache_layer
-
-logger = logging.getLogger(__name__)
 
 # Nodes whose LLM output should be streamed to the user.
 # classify_and_route LLM output is internal (intent classification) — not for user.

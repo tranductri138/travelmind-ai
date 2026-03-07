@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import logging
-
+from loguru import logger
 from playwright.async_api import Browser, async_playwright
-
-logger = logging.getLogger(__name__)
 
 _playwright = None
 _browser: Browser | None = None

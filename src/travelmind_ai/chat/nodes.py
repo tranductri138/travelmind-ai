@@ -10,11 +10,11 @@ Nodes:
 
 from __future__ import annotations
 
-import logging
 import re
 import warnings
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from loguru import logger
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -27,8 +27,6 @@ from travelmind_ai.chat.tools import (
     get_popular_hotels,
     search_hotels,
 )
-
-logger = logging.getLogger(__name__)
 
 # Vietnamese city names for extraction
 _CITIES = [

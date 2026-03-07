@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import logging
-
 from bs4 import BeautifulSoup
+from loguru import logger
 
 from travelmind_ai.core.llm import LLMClient
 from travelmind_ai.scraping.browser import fetch_page_html
 from travelmind_ai.scraping.llm_extractor import extract_hotel_data, extract_reviews
 from travelmind_ai.scraping.schemas import ScrapeRequest, ScrapeResponse
-
-logger = logging.getLogger(__name__)
 
 
 def clean_html(html: str) -> str:

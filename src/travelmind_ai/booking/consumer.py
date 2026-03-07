@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
+
+from loguru import logger
 
 from travelmind_ai.booking.service import delete_booking_embedding, embed_booking
 from travelmind_ai.core import rabbitmq
 from travelmind_ai.core.qdrant import get_client as get_qdrant
 from travelmind_ai.dependencies import get_embedding_client
-
-logger = logging.getLogger(__name__)
 
 
 async def _publish_analytics(data: dict[str, Any], action: str) -> None:

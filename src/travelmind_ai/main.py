@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from loguru import logger
 
 from travelmind_ai.config import settings
 from travelmind_ai.core import qdrant, rabbitmq
@@ -12,8 +14,47 @@ from travelmind_ai.dependencies import init_clients, init_semantic_cache, shutdo
 from travelmind_ai.shared.exceptions import register_exception_handlers
 from travelmind_ai.shared.middleware import CorrelationIDMiddleware
 
-logging.basicConfig(level=settings.log_level.upper())
-logger = logging.getLogger(__name__)
+
+# --- Loguru setup ---
+class _InterceptHandler(logging.Handler):
+    """Route stdlib logging (uvicorn, sqlalchemy, etc.) through loguru."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def _setup_logging() -> None:
+    log_level = settings.log_level.upper()
+
+    # Remove default loguru handler, add custom one
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level=log_level,
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> — "
+            "<level>{message}</level>"
+        ),
+        colorize=True,
+    )
+
+    # Intercept stdlib logging → loguru
+    logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+        logging.getLogger(name).handlers = [_InterceptHandler()]
+
+
+_setup_logging()
 
 _rabbitmq_ok = False
 _qdrant_ok = False

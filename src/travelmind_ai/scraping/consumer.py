@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
+
+from loguru import logger
 
 from travelmind_ai.core import rabbitmq
 from travelmind_ai.dependencies import get_llm_client
 from travelmind_ai.scraping.schemas import ScrapeRequest
 from travelmind_ai.scraping.scraping_service import scrape_hotel
-
-logger = logging.getLogger(__name__)
 
 
 async def _on_scraping_job(data: dict[str, Any]) -> None:

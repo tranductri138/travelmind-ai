@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import logging
+
+from loguru import logger
 
 from travelmind_ai.core.llm import LLMClient
 from travelmind_ai.scraping.schemas import ExtractedHotelData, ExtractedReview
 from travelmind_ai.shared.exceptions import ScrapingError
-
-logger = logging.getLogger(__name__)
 
 EXTRACT_HOTEL_PROMPT = """\
 Bạn là trợ lý trích xuất dữ liệu. Dựa trên đoạn văn bản đã được làm sạch từ trang web \
