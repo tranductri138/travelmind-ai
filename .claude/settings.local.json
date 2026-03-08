@@ -19,7 +19,8 @@
       "Bash(docker exec:*)",
       "Bash(uv pip:*)",
       "Bash(chmod +x:*)",
-      "Bash(uv add:*)"
+      "Bash(uv add:*)",
+      "Bash(.venv/bin/playwright install-deps:*)"
     ]
   }
 }
