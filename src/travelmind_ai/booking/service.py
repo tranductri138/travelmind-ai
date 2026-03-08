@@ -71,7 +71,7 @@ async def embed_booking(
         collection_name=settings.qdrant_collection_bookings,
         points=[point],
     )
-    logger.info("Embedded booking %s", booking_data["id"])
+    logger.info(f"Embedded booking {booking_data['id']}")
 
 
 async def delete_booking_embedding(
@@ -85,4 +85,4 @@ async def delete_booking_embedding(
             must=[FieldCondition(key="booking_id", match=MatchValue(value=booking_id))]
         ),
     )
-    logger.info("Deleted embedding for booking %s", booking_id)
+    logger.info(f"Deleted embedding for booking {booking_id}")

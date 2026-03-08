@@ -71,7 +71,7 @@ async def consume(
                 data = json.loads(message.body.decode())
                 await callback(data)
             except Exception:
-                logger.exception("Error processing message from %s", queue_name)
+                logger.exception(f"Error processing message from {queue_name}")
 
     await queue.consume(_on_message)
-    logger.info("Consuming queue=%s routing_key=%s", queue_name, routing_key)
+    logger.info(f"Consuming queue={queue_name} routing_key={routing_key}")

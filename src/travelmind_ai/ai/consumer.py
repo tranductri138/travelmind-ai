@@ -17,13 +17,13 @@ from travelmind_ai.dependencies import get_embedding_client
 
 async def _on_hotel_event(data: dict[str, Any]) -> None:
     """Handle hotel.created / hotel.updated — re-embed the hotel."""
-    logger.info("Received hotel event for %s", data.get("id"))
+    logger.info(f"Received hotel event for {data.get('id')}")
     await embed_hotel(data, get_embedding_client(), get_qdrant())
 
 
 async def _on_review_created(data: dict[str, Any]) -> None:
     """Handle review.created — embed the new review."""
-    logger.info("Received review event for %s", data.get("id"))
+    logger.info(f"Received review event for {data.get('id')}")
     await embed_review(data, get_embedding_client(), get_qdrant())
 
 
@@ -33,7 +33,7 @@ async def _on_hotel_deleted(data: dict[str, Any]) -> None:
     if not hotel_id:
         logger.warning("hotel.deleted event missing id field")
         return
-    logger.info("Received hotel.deleted for %s", hotel_id)
+    logger.info(f"Received hotel.deleted for {hotel_id}")
     await delete_hotel_embeddings(hotel_id, get_qdrant())
 
 
@@ -43,7 +43,7 @@ async def _on_review_deleted(data: dict[str, Any]) -> None:
     if not review_id:
         logger.warning("review.deleted event missing id field")
         return
-    logger.info("Received review.deleted for %s", review_id)
+    logger.info(f"Received review.deleted for {review_id}")
     await delete_review_embedding(review_id, get_qdrant())
 
 

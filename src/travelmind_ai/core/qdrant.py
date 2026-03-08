@@ -13,7 +13,7 @@ async def connect() -> AsyncQdrantClient:
     global _client
     _client = AsyncQdrantClient(url=settings.qdrant_url)
     await _ensure_collections()
-    logger.info("Qdrant connected at %s", settings.qdrant_url)
+    logger.info(f"Qdrant connected at {settings.qdrant_url}")
     return _client
 
 
@@ -47,4 +47,4 @@ async def _ensure_collections() -> None:
                     distance=Distance.COSINE,
                 ),
             )
-            logger.info("Created Qdrant collection: %s", name)
+            logger.info(f"Created Qdrant collection: {name}")

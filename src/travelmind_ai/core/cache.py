@@ -141,9 +141,7 @@ class SemanticCache:
             return None
 
         logger.info(
-            "Semantic cache HIT (score=%.3f, query='%s')",
-            best.score,
-            payload.get("query", "")[:60],
+            f"Semantic cache HIT (score={best.score:.3f}, query='{payload.get('query', '')[:60]}')"
         )
         return payload.get("response")
 
@@ -205,7 +203,7 @@ class CacheLayer:
         # Tier 1: Exact match (free, O(1))
         cached = self._basic.get(query)
         if cached is not None:
-            logger.info("BasicCache HIT: '%s'", query[:60])
+            logger.info(f"BasicCache HIT: '{query[:60]}'")
             return cached, "basic_hit"
 
         # Tier 2: Semantic match (1 embedding call)

@@ -48,7 +48,7 @@ async def embed_hotel(
         collection_name=settings.qdrant_collection_hotels,
         points=points,
     )
-    logger.info("Embedded hotel %s (%d chunks)", hotel_data["id"], len(chunks))
+    logger.info(f"Embedded hotel {hotel_data['id']} ({len(chunks)} chunks)")
 
 
 async def embed_review(
@@ -84,7 +84,7 @@ async def embed_review(
         collection_name=settings.qdrant_collection_reviews,
         points=[point],
     )
-    logger.info("Embedded review %s", review_data["id"])
+    logger.info(f"Embedded review {review_data['id']}")
 
 
 async def delete_hotel_embeddings(
@@ -98,7 +98,7 @@ async def delete_hotel_embeddings(
             must=[FieldCondition(key="hotel_id", match=MatchValue(value=hotel_id))]
         ),
     )
-    logger.info("Deleted embeddings for hotel %s", hotel_id)
+    logger.info(f"Deleted embeddings for hotel {hotel_id}")
 
 
 async def delete_review_embedding(
@@ -112,4 +112,4 @@ async def delete_review_embedding(
             must=[FieldCondition(key="review_id", match=MatchValue(value=review_id))]
         ),
     )
-    logger.info("Deleted embedding for review %s", review_id)
+    logger.info(f"Deleted embedding for review {review_id}")

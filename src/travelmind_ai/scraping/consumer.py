@@ -17,7 +17,7 @@ async def _on_scraping_job(data: dict[str, Any]) -> None:
         logger.warning("Scraping job missing url field")
         return
 
-    logger.info("Processing scraping job for %s", url)
+    logger.info(f"Processing scraping job for {url}")
     request = ScrapeRequest(url=url, extract_reviews=data.get("extract_reviews", False))
     result = await scrape_hotel(request, get_llm_client())
 
@@ -31,7 +31,7 @@ async def _on_scraping_job(data: dict[str, Any]) -> None:
             "job_id": data.get("job_id"),
         },
     )
-    logger.info("Scraping completed for %s", url)
+    logger.info(f"Scraping completed for {url}")
 
 
 async def start_scraping_consumers() -> None:

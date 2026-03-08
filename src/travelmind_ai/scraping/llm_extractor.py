@@ -60,7 +60,7 @@ async def extract_hotel_data(text: str, llm_client: LLMClient) -> ExtractedHotel
         data = json.loads(result)
         return ExtractedHotelData.model_validate(data)
     except (json.JSONDecodeError, Exception) as e:
-        logger.error("Failed to extract hotel data: %s", e)
+        logger.error(f"Failed to extract hotel data: {e}")
         raise ScrapingError(f"LLM extraction failed: {e}") from e
 
 
@@ -75,5 +75,5 @@ async def extract_reviews(text: str, llm_client: LLMClient) -> list[ExtractedRev
         data = json.loads(result)
         return [ExtractedReview.model_validate(item) for item in data]
     except (json.JSONDecodeError, Exception) as e:
-        logger.error("Failed to extract reviews: %s", e)
+        logger.error(f"Failed to extract reviews: {e}")
         return []

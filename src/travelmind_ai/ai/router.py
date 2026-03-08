@@ -112,7 +112,7 @@ async def reset_collections(
                 distance=Distance.COSINE,
             ),
         )
-        logger.info("Recreated collection: %s (dim=%d)", name, settings.embedding_dimension)
+        logger.info(f"Recreated collection: {name} (dim={settings.embedding_dimension})")
     return {
         "status": "ok",
         "dimension": settings.embedding_dimension,
@@ -155,7 +155,7 @@ async def sync_to_qdrant(
             )
             hotel_count += 1
         except Exception as e:
-            logger.error("Failed to embed hotel %s: %s", hotel.id, e)
+            logger.error(f"Failed to embed hotel {hotel.id}: {e}")
 
     # Sync reviews
     result = await db.execute(select(Review))
@@ -176,7 +176,7 @@ async def sync_to_qdrant(
             )
             review_count += 1
         except Exception as e:
-            logger.error("Failed to embed review %s: %s", review.id, e)
+            logger.error(f"Failed to embed review {review.id}: {e}")
 
     # Sync bookings (join room → hotel for hotel info)
     result = await db.execute(
@@ -207,7 +207,7 @@ async def sync_to_qdrant(
             )
             booking_count += 1
         except Exception as e:
-            logger.error("Failed to embed booking %s: %s", booking.id, e)
+            logger.error(f"Failed to embed booking {booking.id}: {e}")
 
     return {
         "synced_hotels": hotel_count,

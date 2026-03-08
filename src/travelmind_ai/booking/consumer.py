@@ -35,14 +35,14 @@ async def _publish_analytics(data: dict[str, Any], action: str) -> None:
 
 async def _on_booking_created(data: dict[str, Any]) -> None:
     """Handle booking.created — embed booking and publish analytics."""
-    logger.info("Received booking.created for %s", data.get("id"))
+    logger.info(f"Received booking.created for {data.get('id')}")
     await embed_booking(data, get_embedding_client(), get_qdrant())
     await _publish_analytics(data, action="created")
 
 
 async def _on_booking_confirmed(data: dict[str, Any]) -> None:
     """Handle booking.confirmed — re-embed with updated status and publish analytics."""
-    logger.info("Received booking.confirmed for %s", data.get("id"))
+    logger.info(f"Received booking.confirmed for {data.get('id')}")
     data["status"] = "CONFIRMED"
     await embed_booking(data, get_embedding_client(), get_qdrant())
     await _publish_analytics(data, action="confirmed")
@@ -54,7 +54,7 @@ async def _on_booking_cancelled(data: dict[str, Any]) -> None:
     if not booking_id:
         logger.warning("booking.cancelled event missing id field")
         return
-    logger.info("Received booking.cancelled for %s", booking_id)
+    logger.info(f"Received booking.cancelled for {booking_id}")
     await delete_booking_embedding(booking_id, get_qdrant())
     data["status"] = "CANCELLED"
     await _publish_analytics(data, action="cancelled")

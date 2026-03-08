@@ -51,7 +51,9 @@ def _setup_logging() -> None:
     # Intercept stdlib logging → loguru
     logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
-        logging.getLogger(name).handlers = [_InterceptHandler()]
+        lg = logging.getLogger(name)
+        lg.handlers = [_InterceptHandler()]
+        lg.propagate = False
 
 
 _setup_logging()
@@ -65,7 +67,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     global _rabbitmq_ok, _qdrant_ok
 
     # Startup
-    logger.info("Starting TravelMind AI service (env=%s)", settings.app_env)
+    logger.info(f"Starting TravelMind AI service (env={settings.app_env})")
     init_clients()
 
     # RabbitMQ — optional in dev

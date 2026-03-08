@@ -116,12 +116,12 @@ async def classify_and_route(state: dict, llm=None) -> dict:
             intent = raw
         else:
             intent = "general"
-        logger.info("Intent classified by LLM: '%s' → %s", last_msg[:60], intent)
+        logger.info(f"Intent classified by LLM: '{last_msg[:60]}' → {intent}")
     elif intent is None:
         intent = "general"
 
     if intent != "general" or classify_intent_rules(last_msg) is not None:
-        logger.info("Intent classified: '%s' → %s", last_msg[:60], intent)
+        logger.info(f"Intent classified: '{last_msg[:60]}' → {intent}")
 
     return {"intent": intent}
 
@@ -149,7 +149,7 @@ async def handle_search(state: dict) -> dict:
         "min_stars": min_stars,
     })
 
-    logger.info("handle_search: query='%s', city=%s → %d chars", query[:40], city, len(result))
+    logger.info(f"handle_search: query='{query[:40]}', city={city} → {len(result)} chars")
     return {"tool_result": result}
 
 
@@ -173,7 +173,7 @@ async def handle_popular(state: dict) -> dict:
         "limit": 5,
     })
 
-    logger.info("handle_popular: city=%s → %d chars", city, len(result))
+    logger.info(f"handle_popular: city={city} → {len(result)} chars")
     return {"tool_result": result}
 
 

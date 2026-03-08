@@ -25,7 +25,7 @@ def clean_html(html: str) -> str:
 async def scrape_hotel(request: ScrapeRequest, llm_client: LLMClient) -> ScrapeResponse:
     """Full scraping pipeline: fetch → clean → LLM extract."""
     url = str(request.url)
-    logger.info("Scraping %s", url)
+    logger.info(f"Scraping {url}")
 
     html = await fetch_page_html(url)
     cleaned = clean_html(html)

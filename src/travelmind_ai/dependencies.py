@@ -30,7 +30,7 @@ def init_clients() -> None:
         default_ttl=settings.cag_basic_ttl,
     )
     _cache_layer = CacheLayer(basic=basic, semantic=None)
-    logger.info("CAG BasicCache initialized (max_size=%d, ttl=%ds)", basic._max_size, basic._default_ttl)
+    logger.info(f"CAG BasicCache initialized (max_size={basic._max_size}, ttl={basic._default_ttl}s)")
 
 
 def init_semantic_cache() -> None:
@@ -52,9 +52,7 @@ def init_semantic_cache() -> None:
         )
         _cache_layer = CacheLayer(basic=_cache_layer._basic, semantic=semantic)
         logger.info(
-            "CAG SemanticCache initialized (threshold=%.2f, ttl=%ds)",
-            settings.cag_semantic_threshold,
-            settings.cag_semantic_ttl,
+            f"CAG SemanticCache initialized (threshold={settings.cag_semantic_threshold:.2f}, ttl={settings.cag_semantic_ttl}s)"
         )
     except RuntimeError:
         logger.warning("SemanticCache not initialized — Qdrant unavailable")

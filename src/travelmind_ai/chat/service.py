@@ -149,7 +149,7 @@ async def _stream_stateless(
     if cache and last_msg:
         cached_response, status = await cache.get(last_msg)
         if cached_response is not None:
-            logger.info("CAG %s for stream: '%s'", status, last_msg[:60])
+            logger.info(f"CAG {status} for stream: '{last_msg[:60]}'")
             yield cached_response
             return
 
@@ -189,7 +189,7 @@ async def _invoke_stateless(
     if cache and last_msg:
         cached_response, status = await cache.get(last_msg)
         if cached_response is not None:
-            logger.info("CAG %s for chat: '%s'", status, last_msg[:60])
+            logger.info(f"CAG {status} for chat: '{last_msg[:60]}'")
             return cached_response
 
     # Cache miss → run agent (ephemeral thread_id for stateless)
