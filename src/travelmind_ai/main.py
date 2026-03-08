@@ -34,6 +34,15 @@ class _InterceptHandler(logging.Handler):
 def _setup_logging() -> None:
     log_level = settings.log_level.upper()
 
+    # Custom level colors — avoid white, use vivid colors for readability
+    logger.level("TRACE", color="<dim><cyan>")
+    logger.level("DEBUG", color="<blue>")
+    logger.level("INFO", color="<bold><green>")
+    logger.level("SUCCESS", color="<bold><magenta>")
+    logger.level("WARNING", color="<bold><yellow>")
+    logger.level("ERROR", color="<bold><red>")
+    logger.level("CRITICAL", color="<bold><RED><on_white>")
+
     # Remove default loguru handler, add custom one
     logger.remove()
     logger.add(
@@ -54,6 +63,9 @@ def _setup_logging() -> None:
         lg = logging.getLogger(name)
         lg.handlers = [_InterceptHandler()]
         lg.propagate = False
+
+    # Suppress verbose SQLAlchemy SQL echo (keep only WARNING+)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 
 _setup_logging()
