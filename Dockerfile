@@ -9,16 +9,16 @@ RUN uv sync --no-dev --frozen --no-install-project
 COPY src/ src/
 RUN uv sync --no-dev --frozen --no-editable
 
-FROM python:3.12-slim
+FROM mcr.microsoft.com/playwright/python:v1.52.0-noble AS runtime
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
-
-RUN playwright install-deps chromium
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/src /app/src
 

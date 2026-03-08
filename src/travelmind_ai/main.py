@@ -41,7 +41,7 @@ def _setup_logging() -> None:
     logger.level("SUCCESS", color="<bold><magenta>")
     logger.level("WARNING", color="<bold><yellow>")
     logger.level("ERROR", color="<bold><red>")
-    logger.level("CRITICAL", color="<bold><RED><on_white>")
+    logger.level("CRITICAL", color="<bold><white><RED>")
 
     # Remove default loguru handler, add custom one
     logger.remove()
