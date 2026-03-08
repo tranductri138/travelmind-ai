@@ -15,11 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -r
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
 
 ENV PATH="/app/.venv/bin:$PATH"
 
 RUN playwright install-deps chromium
+
+COPY --from=builder /app/src /app/src
 
 EXPOSE 8000
 
