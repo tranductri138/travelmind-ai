@@ -19,7 +19,7 @@ COPY --from=builder /app/src /app/src
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN playwright install --with-deps chromium
+RUN playwright install-deps chromium
 
 EXPOSE 8000
 

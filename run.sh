@@ -22,6 +22,7 @@ docker run -d \
   --name "$CONTAINER_NAME" \
   --env-file .env \
   --network "$NETWORK" \
+  -v "$HOME/.cache/ms-playwright:/root/.cache/ms-playwright" \
   -p 8000:8000 \
   "$IMAGE_NAME"
 
