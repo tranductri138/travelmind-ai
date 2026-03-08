@@ -16,7 +16,9 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN playwright install-deps chromium 
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
+
+RUN playwright install-deps chromium
 
 COPY --from=builder /app/src /app/src
 
